@@ -119,7 +119,6 @@ static uint8_t check_same(char *f1, char*f2) {
 	struct stat statf2;
 	lstat(f1, &statf1);
 	lstat(f2, &statf2);
-	printf("files are same? %ld,%ld\n", statf1.st_ino, statf2.st_ino);
 	return (statf1.st_ino == statf2.st_ino);
 }
 

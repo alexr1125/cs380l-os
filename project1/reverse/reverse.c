@@ -5,6 +5,9 @@
 #include <stdint.h>
 #include <errno.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 enum _io_type_ {
 	IO_RD_STDIN_WR_STDOUT = 1,
@@ -111,6 +114,15 @@ static stack *parse_input(FILE *input) {
 	}
 }
 
+static uint8_t check_same(char *f1, char*f2) {
+	struct stat statf1;
+	struct stat statf2;
+	lstat(f1, &statf1);
+	lstat(f2, &statf2);
+	printf("files are same? %ld,%ld\n", statf1.st_ino, statf2.st_ino);
+	return (statf1.st_ino == statf2.st_ino);
+}
+
 int main(int argc, char *argv[]) {
 	FILE *in_stream = NULL;
 	FILE *out_stream = NULL;
@@ -143,6 +155,13 @@ int main(int argc, char *argv[]) {
 				fprintf(stderr, "reverse: cannot open file '%s'\n", argv[2]);
 				fclose(in_stream);
 				exit(1);
+			}
+
+			if (check_same(argv[1], argv[2])) {
+				fprintf(stderr, "reverse: input and output file must differ\n");
+				fclose(in_stream);
+				fclose(out_stream);
+				exit(1);				
 			}
 			break;
 		default:

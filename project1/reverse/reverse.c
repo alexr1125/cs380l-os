@@ -93,6 +93,7 @@ static stack *parse_input(FILE *input) {
             break;
         }
     }
+    free(line);
 
     if (errno == ENOMEM) {
         /* Malloc failed to allocate. Free up everything, print message

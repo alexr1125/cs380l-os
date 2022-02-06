@@ -39,6 +39,7 @@ int main(int argc, char *argv[]) {
                 in_stream = fopen(argv[curr_file], "r");
             } else {
                 /* End of all files. Print the last consecutive charcters */
+                fclose(in_stream);
                 fwrite(&num_char, 4, 1, stdout);
                 fwrite(&prev_char, 1, 1, stdout);
                 break;

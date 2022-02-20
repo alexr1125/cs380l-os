@@ -48,7 +48,7 @@ int main(int argc, char *argv[]) {
         exit(1);
     }
 
-    exit(0);
+    return 0;
 }
 
 /*
@@ -159,7 +159,7 @@ static void DestroyCommand(command **cmd_ptr) {
 
 static void RunInteractiveMode(void) {
     size_t nread, len;
-    char *line;
+    char *line = NULL;
 
     node *path = CreatePath();
 

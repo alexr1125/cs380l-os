@@ -63,7 +63,30 @@ static void EmptyPath(char **path) {
    Must call DestroyCommand when you no longer need it.
  */
 static command *CreateCommand(char *line) {
+    command *cmd = (command *)malloc(sizeof(command));
 
+    /* Count number of total tokens first */
+    char *temp_ptr;
+    int arg_cnt = 1;
+    while((temp_ptr = strpbrk(temp_ptr, " \t")) != NULL) {
+        arg_cnt++;
+    }
+
+    /* Allocate space for argument array */
+    *cmd->argv = (char *) malloc(sizeof(char *) * (arg_cnt + 1));
+    cmd->argv[arg_cnt] = NULL;
+
+    char *tok;
+    int i = 0;
+    while((tok = strtok(line, " ")) != NULL) {
+        cmd->argv[i] = (char *)malloc(strlen(tok) + 1);
+        strcpy(cmd->argv[i], tok);
+        cmd->argv[i][strlen(tok)] = 0;  //NULL terminate the new string
+        i++;
+        cmd->argc++;
+    }
+
+    assert(arg_cnt == cmd->argc);
 }
 
 static void DestroyCommand(command *cmd) {
@@ -72,6 +95,7 @@ static void DestroyCommand(command *cmd) {
         cmd->argc--;
     }
 
+    free(cmd->argv);
     free(cmd);
 }
 
@@ -83,7 +107,7 @@ static void RunInteractiveMode(void) {
     char **path = CreatePath();
 
     while (1) {
-        printf("wish>");
+        printf("wish> ");
         if ((nread = getline(&line, &len, stdin)) != -1) {
             /* Parse the command and check if  it's a built in command */
             command *cmd = ParseCommand(line);
@@ -98,8 +122,8 @@ static void RunInteractiveMode(void) {
                         exit(0);
                     }
                 } else if (strcmp(cmd->argv[0], "cd") == 0) {
-                    /* If more than 1 argument is passed to cd, then throw error */
-                    if (cmd->argc > 2) {
+                    /* If 0 or more than 1 argument is passed to cd, then throw error */
+                    if (cmd->argc != 2) {
                         write(STDERR_FILENO, error_message, strlen(error_message));
                     } else {
                         if (chdir(cmd->argv[1]) == -1) {
@@ -111,14 +135,18 @@ static void RunInteractiveMode(void) {
                     if (cmd->argc == 1) {
                         EmptyPath(path);
                     } else {
-                        /* Iterate through all the  */
+                        /* Iterate through all the arguments and add them to path */
+                        for (int i = 1; i < cmd->argc; i++) {
+                            AppendToPath(path, cmd->argv[i]);
+                        }
                     }
                 } else {
-
+                    printf("still haven't implemented this part.");
                 }
             }
             DestroyCommand(cmd);
         }
+        free(line);
     }
 }
 

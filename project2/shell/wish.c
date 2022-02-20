@@ -21,7 +21,7 @@ typedef struct _node_ {
 } node;
 
 typedef struct {
-    char **argv;
+    node *argv;
     int argc;
 } command;
 
@@ -118,41 +118,47 @@ static void AppendToPath(node **path, char *new_loc) {
 static command *CreateCommand(char *line) {
     command *cmd = (command *) malloc(sizeof(command));
     assert(cmd != NULL);
+    cmd->argc = 0;
 
-    /* Count number of total tokens first */
-    char *temp_ptr;
-    int arg_cnt = 1;
-    while((temp_ptr = strpbrk(temp_ptr, " ")) != NULL) {
-        arg_cnt++;
-    }
+    char *tok = strtok(line, " \n");
+    while(tok != NULL) {
+        node *new_node = (node *) malloc(sizeof(node));
+        if (cmd->argc == 0) {
+            new_node->prev = new_node;
+            new_node->next = new_node;
+            cmd->argv = new_node;
+        } else {
+            cmd->argv->prev->next = new_node;
+            new_node->prev = cmd->argv->prev;
+            new_node->next = cmd->argv;
+            cmd->argv->prev = new_node;
+        }
 
-    /* Allocate space for argument array */
-    *cmd->argv = (char *) malloc(sizeof(char *) * (arg_cnt + 1));
-    cmd->argv[arg_cnt] = NULL;
-
-    char *tok;
-    int i = 0;
-    while((tok = strtok(line, " ")) != NULL) {
-        cmd->argv[i] = (char *)malloc(strlen(tok) + 1);
-        strcpy(cmd->argv[i], tok);
-        cmd->argv[i][strlen(tok)] = 0;  //NULL terminate the new string
-        i++;
+        char *new_payload = (char *)malloc(strlen(tok) + 1);
+        strcpy(new_payload, tok);
+        new_payload[strlen(tok)] = 0;  //NULL terminate the new string
+        new_node->payload = (void *) new_payload;
         cmd->argc++;
+        tok = strtok(NULL, " ");
     }
-
-    assert(arg_cnt == cmd->argc);
 
     return cmd;
 }
 
 static void DestroyCommand(command **cmd_ptr) {
     command *cmd = *cmd_ptr;
-    while (cmd->argc > 0) {
-        free(cmd->argv[cmd->argc]);
+    node *curr_arg = cmd->argv->next;
+    while (curr_arg != cmd->argv) {
+        node *temp = curr_arg->next;
+        free(curr_arg->payload);
+        free(curr_arg);
+        curr_arg = temp;
         cmd->argc--;
     }
 
+    free(cmd->argv->payload);
     free(cmd->argv);
+    cmd->argc--;
     free(cmd);
     *cmd_ptr = NULL;
 }
@@ -169,33 +175,37 @@ static void RunInteractiveMode(void) {
             /* Parse the command and check if  it's a built in command */
             command *cmd = CreateCommand(line);
             if (cmd->argc > 0) {
-                if (strcmp(cmd->argv[0], "exit") == 0) {
+                if (strcmp(cmd->argv->payload, "exit") == 0) {
                     /* Throw error if any arguments are passed to exit */
                     if (cmd->argc > 1) {
                         write(STDERR_FILENO, error_message, strlen(error_message));
                     } else {
                         DestroyPath(&path);
                         DestroyCommand(&cmd);
+                        free(line);
                         exit(0);
                     }
-                } else if (strcmp(cmd->argv[0], "cd") == 0) {
+                } else if (strcmp(cmd->argv->payload, "cd") == 0) {
                     /* If 0 or more than 1 argument is passed to cd, then throw error */
                     if (cmd->argc != 2) {
                         write(STDERR_FILENO, error_message, strlen(error_message));
                     } else {
-                        if (chdir(cmd->argv[1]) == -1) {
+                        if (chdir(cmd->argv->next->payload) == -1) {
                             /* chdir failed so throw an error */
                             write(STDERR_FILENO, error_message, strlen(error_message));
                         }
                     }
-                } else if (strcmp(cmd->argv[0], "path") == 0) {
+                } else if (strcmp(cmd->argv->payload, "path") == 0) {
                     if (cmd->argc == 1) {
+                        /* No arguments passed, so clear current path */
                         DestroyPath(&path);
                         path = NULL;
                     } else {
                         /* Iterate through all the arguments and add them to path */
-                        for (int i = 1; i < cmd->argc; i++) {
-                            AppendToPath(&path, cmd->argv[i]);
+                        node *curr_arg = cmd->argv->next;
+                        while (curr_arg != cmd->argv) {
+                            AppendToPath(&path, curr_arg->payload);
+                            curr_arg = curr_arg->next;
                         }
                     }
                 } else {

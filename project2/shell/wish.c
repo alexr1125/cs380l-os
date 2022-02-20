@@ -31,19 +31,18 @@ int main(int argc, char *argv[]) {
     }
 }
 
-static void InteractiveModeRun(void) {
+static void RunInteractiveMode(void) {
     size_t nread, len;
     char *line;
 
     while (1) {
         printf("wish>");
         if ((nread = getline(&line, &len, stdin)) != -1) {
-            printf("hello from me. This : %s", line);
+            
         }
-        exit(0);
     }
 }
 
-static void BatchModeRun(char *file_path) {
+static void RunBatchMode(char *file_path) {
 
 }

@@ -15,14 +15,20 @@
 /* FUNCTION PROTOTYPES */
 static void InteractiveModeRun(void);
 static void BatchModeRun(char *file_path);
-static char** CreatePath(void);
-static void AppendToPath(char** path, char *new_loc);
-static void EmptyPath(char **path);
-static void DestroyPath(char **path);
+static node *CreatePath(void);
+static void AppendToPath(node **path, char *new_loc);
+static void DestroyPath(node **path);
 static command *CreateCommand(char *line);
-static void DestroyCommand(command *cmd);
+static void DestroyCommand(command **cmd);
 /* GLOBAL VARIABLES */
 const char error_message[30] = "An error has occurred\n";
+
+/* Only use for path but will use for command if need be */
+typedef struct _node_ {
+    void *payload;
+    struct _node_ *next;
+    struct _node_ *prev;
+} node;
 
 typedef struct {
     char **argv;
@@ -41,24 +47,67 @@ int main(int argc, char *argv[]) {
     }
 }
 
-/* Last element will always be NULL pointer */
-static char** CreatePath(void) {
+/*
+   Initital will always contain /bin
+ */
+static node *CreatePath(void) {
+    node *path = (node *) malloc(sizeof(node));
+    assert(path != NULL);
 
+    /* Create string for new path location */
+    int bin_buff_size = strlen("/bin") + 1;
+    char *bin_buff = (char *) malloc(bin_buff_size);
+    strcpy(bin_buff, "/bin");
+    bin_buff[bin_buff_size - 1] = 0;
+
+    path->payload = (void *) bin_buff;
+    path->next = path;
+    path->prev = path;
+
+    return path;
 }
 
 /* Deallocate everything */
-static void DestroyPath(char **path) {
+static void DestroyPath(node **path) {
+    node *head = *path;
+    node *curr_node = head->next;
+    while(curr_node != head) {
+        node *temp = curr_node->next;
+        free(curr_node->payload);
+        free(curr_node);
+        curr_node = temp;
+    }
 
+    free(head->payload);
+    free(head);
+    *path = NULL;
 }
 
-static void AppendToPath(char** path, char *new_loc) {
+static void AppendToPath(node **path, char *new_loc) {
+    node *new_node = (node *) malloc(sizeof(node));
+    assert(path != NULL);
 
+    /* Create string for new path location */
+    int new_loc_buff_size = strlen(new_loc) + 1;
+    char *new_loc_buff = (char *) malloc(new_loc_buff_size);
+    strcpy(new_loc_buff, new_loc);
+    new_loc_buff[new_loc_buff_size - 1] = 0;
+    new_node->payload = (void *) new_loc_buff;
+
+    node *head = *path;
+    if (head != NULL) {
+        /* Add new node and stitch things up */
+        head->prev->next = new_node;
+        new_node->prev = head->prev;
+        new_node->next = head;
+        head->prev = new_node;
+    } else {
+        new_node->next = new_node;
+        new_node->prev = new_node;
+        *path = new_node;
+    }
 }
 
-/* Removes all locations in path */
-static void EmptyPath(char **path) {
-
-}
 /* Parses string into cmd + arguments based on space character
    Must call DestroyCommand when you no longer need it.
  */
@@ -89,7 +138,8 @@ static command *CreateCommand(char *line) {
     assert(arg_cnt == cmd->argc);
 }
 
-static void DestroyCommand(command *cmd) {
+static void DestroyCommand(command **cmd_ptr) {
+    command *cmd = *cmd_ptr;
     while (cmd->argc > 0) {
         free(cmd->argv[cmd->argc]);
         cmd->argc--;
@@ -97,6 +147,7 @@ static void DestroyCommand(command *cmd) {
 
     free(cmd->argv);
     free(cmd);
+    *cmd_ptr = NULL;
 }
 
 static void RunInteractiveMode(void) {
@@ -104,7 +155,7 @@ static void RunInteractiveMode(void) {
     char *line;
     char *current_token;
 
-    char **path = CreatePath();
+    node *path = CreatePath();
 
     while (1) {
         printf("wish> ");
@@ -117,8 +168,8 @@ static void RunInteractiveMode(void) {
                     if (cmd->argc > 1) {
                         write(STDERR_FILENO, error_message, strlen(error_message));
                     } else {
-                        DestroyPath(path);
-                        DestroyCommand(cmd);
+                        DestroyPath(&path);
+                        DestroyCommand(&cmd);
                         exit(0);
                     }
                 } else if (strcmp(cmd->argv[0], "cd") == 0) {
@@ -133,23 +184,24 @@ static void RunInteractiveMode(void) {
                     }
                 } else if (strcmp(cmd->argv[0], "path") == 0) {
                     if (cmd->argc == 1) {
-                        EmptyPath(path);
+                        DestroyPath(&path);
+                        path = NULL;
                     } else {
                         /* Iterate through all the arguments and add them to path */
                         for (int i = 1; i < cmd->argc; i++) {
-                            AppendToPath(path, cmd->argv[i]);
+                            AppendToPath(&path, cmd->argv[i]);
                         }
                     }
                 } else {
                     printf("still haven't implemented this part.");
                 }
             }
-            DestroyCommand(cmd);
+            DestroyCommand(&cmd);
         }
         free(line);
     }
 }
 
 static void RunBatchMode(char *file_path) {
-    char **path = InitPath();
+    node *path = CreatePath();
 }

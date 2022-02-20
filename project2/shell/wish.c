@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <assert.h>
+#include <stdbool.h>
 
 /* DEFINES */
 #define INTERACTIVE_MODE 1
@@ -23,6 +24,7 @@ typedef struct _node_ {
 typedef struct {
     node *argv;
     int argc;
+    int parallel_cnt;
 } command;
 
 /* FUNCTION PROTOTYPES */
@@ -119,6 +121,7 @@ static command *CreateCommand(char *line) {
     command *cmd = (command *) malloc(sizeof(command));
     assert(cmd != NULL);
     cmd->argc = 0;
+    cmd->parallel_cnt = 0;
 
     char *tok = strtok(line, " \n");
     while(tok != NULL) {
@@ -136,10 +139,18 @@ static command *CreateCommand(char *line) {
 
         char *new_payload = (char *)malloc(strlen(tok) + 1);
         strcpy(new_payload, tok);
+        if (strcmp(new_payload, "&") == 0) {
+            cmd->parallel_cnt++;
+        }
         new_payload[strlen(tok)] = 0;  //NULL terminate the new string
         new_node->payload = (void *) new_payload;
         cmd->argc++;
         tok = strtok(NULL, " \n");
+    }
+
+    if (cmd->parallel_cnt > 0) {
+        /* Add 1 for the last parallel command */
+        cmd->parallel_cnt++;
     }
 
     return cmd;
@@ -209,7 +220,20 @@ static void RunInteractiveMode(void) {
                         }
                     }
                 } else {
-                    printf("still haven't implemented this part.");
+#if 0
+                    /* Code to test that parallel commands are being parsed correctly */
+                    if (cmd->parallel_cnt > 0) {
+                        node *curr = cmd->argv;
+                        for (int i = 0; i < cmd->argc; i++) {
+                            if (strcmp(curr->payload, "&") == 0) {
+                                printf("\n-------\n");
+                            } else {
+                                printf("*%s*", (char *) curr->payload);
+                            }
+                            curr = curr->next;
+                        }
+                    }
+#endif
                 }
             }
             DestroyCommand(&cmd);

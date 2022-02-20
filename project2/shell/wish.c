@@ -139,7 +139,7 @@ static command *CreateCommand(char *line) {
         new_payload[strlen(tok)] = 0;  //NULL terminate the new string
         new_node->payload = (void *) new_payload;
         cmd->argc++;
-        tok = strtok(NULL, " ");
+        tok = strtok(NULL, " \n");
     }
 
     return cmd;

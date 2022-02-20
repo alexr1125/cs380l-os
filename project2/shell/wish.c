@@ -214,7 +214,6 @@ static void RunInteractiveMode(void) {
             }
             DestroyCommand(&cmd);
         }
-        free(line);
     }
 }
 

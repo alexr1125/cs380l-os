@@ -7,21 +7,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <assert.h>
 
 /* DEFINES */
-#define INTERACTIVE_MODE 2
-#define BATCH_MODE       3
-
-/* FUNCTION PROTOTYPES */
-static void InteractiveModeRun(void);
-static void BatchModeRun(char *file_path);
-static node *CreatePath(void);
-static void AppendToPath(node **path, char *new_loc);
-static void DestroyPath(node **path);
-static command *CreateCommand(char *line);
-static void DestroyCommand(command **cmd);
-/* GLOBAL VARIABLES */
-const char error_message[30] = "An error has occurred\n";
+#define INTERACTIVE_MODE 1
+#define BATCH_MODE       2
 
 /* Only use for path but will use for command if need be */
 typedef struct _node_ {
@@ -35,16 +25,30 @@ typedef struct {
     int argc;
 } command;
 
+/* FUNCTION PROTOTYPES */
+static void RunInteractiveMode(void);
+static void RunBatchMode(char *file_path);
+static node *CreatePath(void);
+static void AppendToPath(node **path, char *new_loc);
+static void DestroyPath(node **path);
+static command *CreateCommand(char *line);
+static void DestroyCommand(command **cmd);
+
+/* GLOBAL VARIABLES */
+const char error_message[30] = "An error has occurred\n";
+
 /* CODE */
 int main(int argc, char *argv[]) {
     if (argc == INTERACTIVE_MODE) {
-        InteractiveModeRun();
+        RunInteractiveMode();
     } else if (argc == BATCH_MODE) {
-        BatchModeRun(argv[BATCH_MODE-1]);
+        RunBatchMode(argv[BATCH_MODE-1]);
     } else {
         write(STDERR_FILENO, error_message, strlen(error_message));
         exit(1);
     }
+
+    exit(0);
 }
 
 /*
@@ -112,12 +116,13 @@ static void AppendToPath(node **path, char *new_loc) {
    Must call DestroyCommand when you no longer need it.
  */
 static command *CreateCommand(char *line) {
-    command *cmd = (command *)malloc(sizeof(command));
+    command *cmd = (command *) malloc(sizeof(command));
+    assert(cmd != NULL);
 
     /* Count number of total tokens first */
     char *temp_ptr;
     int arg_cnt = 1;
-    while((temp_ptr = strpbrk(temp_ptr, " \t")) != NULL) {
+    while((temp_ptr = strpbrk(temp_ptr, " ")) != NULL) {
         arg_cnt++;
     }
 
@@ -136,6 +141,8 @@ static command *CreateCommand(char *line) {
     }
 
     assert(arg_cnt == cmd->argc);
+
+    return cmd;
 }
 
 static void DestroyCommand(command **cmd_ptr) {
@@ -153,7 +160,6 @@ static void DestroyCommand(command **cmd_ptr) {
 static void RunInteractiveMode(void) {
     size_t nread, len;
     char *line;
-    char *current_token;
 
     node *path = CreatePath();
 
@@ -161,7 +167,7 @@ static void RunInteractiveMode(void) {
         printf("wish> ");
         if ((nread = getline(&line, &len, stdin)) != -1) {
             /* Parse the command and check if  it's a built in command */
-            command *cmd = ParseCommand(line);
+            command *cmd = CreateCommand(line);
             if (cmd->argc > 0) {
                 if (strcmp(cmd->argv[0], "exit") == 0) {
                     /* Throw error if any arguments are passed to exit */
@@ -203,5 +209,6 @@ static void RunInteractiveMode(void) {
 }
 
 static void RunBatchMode(char *file_path) {
-    node *path = CreatePath();
+    //node *path = CreatePath();
+    printf("Have not implemented this");
 }

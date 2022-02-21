@@ -14,7 +14,6 @@
 #define INTERACTIVE_MODE 1
 #define BATCH_MODE       2
 
-/* Only use for path but will use for command if need be */
 typedef struct _node_ {
     void *data;
     struct _node_ *next;
@@ -30,19 +29,11 @@ typedef struct _linkedlist_ {
 typedef struct {
     linkedlist *argv;   // List of all tokens for this command
     int argc;   // Number of tokens
-    int is_parallel;    // If we are trying to execute parallel commands
-    bool is_redirected;
-    node *redirection;
+    linkedlist *redirection;
 } command;
 
-/* FUNCTION PROTOTYPES */
-// static void RunInteractiveMode(void);
-// static void RunBatchMode(char *file_path);
-// static node *CreatePath(void);
-// static void AppendToPath(node **path, char *new_loc);
-// static void DestroyPath(node **path);
-// static command *CreateCommand(char *line);
-// static void DestroyCommand(command **cmd);
+static void RunInteractiveMode(void);
+static void RunBatchMode(char *file_path);
 
 /* GLOBAL VARIABLES */
 const char error_message[30] = "An error has occurred\n";
@@ -98,7 +89,6 @@ static void *PopList(linkedlist *list) {
     return data_to_return;
 }
 
-
 /*
    Initital will always contain /bin
  */
@@ -107,13 +97,13 @@ static linkedlist *CreatePath(void) {
     assert(path != NULL);
 
     /* insert node for bin */
-    PushList(path, strdup("/bin"));
+    InsertList(path, strdup("/bin"));
 
     return path;
 }
 
 static void AppendToPath(linkedlist *path, char *loc) {
-    PushList(path, strdup(loc));
+    InsertList(path, strdup(loc));
 }
 
 /* Deallocate everything */
@@ -125,67 +115,53 @@ static void DestroyPath(linkedlist *path) {
     free(path);
 }
 
-/* Parses string into cmd + arguments based on space character
-   Must call DestroyCommand when you no longer need it.
- */
-static command *CreateCommand(char *line) {
-    command *cmd = (command *) malloc(sizeof(command));
-    assert(cmd != NULL);
-    cmd->argc = 0;
-    cmd->parallel_cnt = 0;
 
-    char *tok = strtok(line, " \n\t");
-    while(tok != NULL) {
-        node *new_node = (node *) malloc(sizeof(node));
-        if (cmd->argc == 0) {
-            new_node->prev = new_node;
-            new_node->next = new_node;
-            cmd->argv = new_node;
-        } else {
-            cmd->argv->prev->next = new_node;
-            new_node->prev = cmd->argv->prev;
-            new_node->next = cmd->argv;
-            cmd->argv->prev = new_node;
-        }
+static linkedlist *CreateCommand(char *line) {
+    char *line_copy = strdup(line);
+    linkedlist *cmd_list = (linkedlist *) malloc(sizeof(linkedlist));
+    char *parallel_sep_ptr, *whitespace_sep_ptr, *redirection_sep_ptr;
 
-        char *new_payload = (char *)malloc(strlen(tok) + 1);
-        strcpy(new_payload, tok);
-        if (strcmp(new_payload, "&") == 0) {
-            cmd->parallel_cnt++;
+    /* First separate based on '&' and newline */
+    while ((parallel_sep_ptr = strsep(&line_copy, "&\n")) != NULL) {
+        if (*parallel_sep_ptr != '\0') {
+            command *new_cmd = (command *) malloc(sizeof(command));
+            new_cmd->redirection = NULL;
+            new_cmd->argv = NULL;
+            new_cmd->argc = 0;
+            printf("p*%s*p\n", parallel_sep_ptr);
+            /* Then parse based on redirection */
+            while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
+                if (*redirection_sep_ptr != '\0') {
+                    printf("r*%s*r\n", redirection_sep_ptr);
+                    /* Finally parse on whitespaces */
+                    while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
+                        if (*whitespace_sep_ptr != '\0') {
+                            printf("w*%s*w\n", whitespace_sep_ptr);
+                        }
+                    }
+                }
+            }
         }
-        new_payload[strlen(tok)] = 0;  //NULL terminate the new string
-        new_node->payload = (void *) new_payload;
-        cmd->argc++;
-        tok = strtok(NULL, " \n\t");
     }
 
-    if (cmd->parallel_cnt > 0) {
-        /* Add 1 for the last parallel command */
-        cmd->parallel_cnt++;
-    }
 
-    return cmd;
+    return cmd_list;
 }
 
 static void DestroyCommand(command **cmd_ptr) {
-    command *cmd = *cmd_ptr;
-    node *curr_arg = cmd->argv->next;
-    while (curr_arg != cmd->argv) {
-        node *temp = curr_arg->next;
-        free(curr_arg->payload);
-        free(curr_arg);
-        curr_arg = temp;
-        cmd->argc--;
-    }
 
-    free(cmd->argv->payload);
-    free(cmd->argv);
-    cmd->argc--;
-    free(cmd);
-    *cmd_ptr = NULL;
 }
 
+
 static void RunInteractiveMode(void) {
+    size_t nread, len;
+    char *line = NULL;
+        printf("wish> ");
+        if ((nread = getline(&line, &len, stdin)) != -1) {
+            /* Parse the command and check if  it's a built in command */
+            linkedlist *cmd_list = CreateCommand(line);
+        }    
+#if 0
     size_t nread, len;
     char *line = NULL;
 
@@ -262,6 +238,7 @@ static void RunInteractiveMode(void) {
             DestroyCommand(&cmd);
         }
     }
+#endif
 }
 
 static void RunBatchMode(char *file_path) {

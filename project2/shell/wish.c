@@ -16,25 +16,33 @@
 
 /* Only use for path but will use for command if need be */
 typedef struct _node_ {
-    void *payload;
+    void *data;
     struct _node_ *next;
     struct _node_ *prev;
 } node;
 
+typedef struct _linkedlist_ {
+    node *head;
+    node *tail;
+    int count;
+}linkedlist;
+
 typedef struct {
-    node *argv;
-    int argc;
-    int parallel_cnt;
+    linkedlist *argv;   // List of all tokens for this command
+    int argc;   // Number of tokens
+    int is_parallel;    // If we are trying to execute parallel commands
+    bool is_redirected;
+    node *redirection;
 } command;
 
 /* FUNCTION PROTOTYPES */
-static void RunInteractiveMode(void);
-static void RunBatchMode(char *file_path);
-static node *CreatePath(void);
-static void AppendToPath(node **path, char *new_loc);
-static void DestroyPath(node **path);
-static command *CreateCommand(char *line);
-static void DestroyCommand(command **cmd);
+// static void RunInteractiveMode(void);
+// static void RunBatchMode(char *file_path);
+// static node *CreatePath(void);
+// static void AppendToPath(node **path, char *new_loc);
+// static void DestroyPath(node **path);
+// static command *CreateCommand(char *line);
+// static void DestroyCommand(command **cmd);
 
 /* GLOBAL VARIABLES */
 const char error_message[30] = "An error has occurred\n";
@@ -54,64 +62,67 @@ int main(int argc, char *argv[]) {
 }
 
 /*
+    Creates an empty list
+    Must free once done with it
+*/
+static linkedlist *CreateList(void) {
+    linkedlist *new_list = (linkedlist *) malloc(sizeof(linkedlist));
+    if (new_list != NULL) {
+        new_list->head = NULL;
+        new_list->tail = NULL;
+        new_list->count = 0;
+    }
+
+    return new_list;
+}
+
+/* Inserts a new node at the end  */
+static void InsertList(linkedlist *list, void *data) {
+    node *new_node = (node *) malloc(sizeof(node));
+    new_node->data = data;
+    new_node->next = list->head;
+    new_node->prev = list->tail;
+    list->head->prev = new_node;
+    list->tail->next = new_node;
+    list->count++;
+}
+
+/* Returns pointer to the data of the node that removed */
+static void *PopList(linkedlist *list) {
+    node *node_to_remove = list->head;
+    void *data_to_return = node_to_remove->data;
+    list->head = node_to_remove->next;
+    list->tail->next = node_to_remove->next;
+    free(node_to_remove);
+    list->count--;
+    return data_to_return;
+}
+
+
+/*
    Initital will always contain /bin
  */
-static node *CreatePath(void) {
-    node *path = (node *) malloc(sizeof(node));
+static linkedlist *CreatePath(void) {
+    linkedlist *path = CreateList();
     assert(path != NULL);
 
-    /* Create string for new path location */
-    int bin_buff_size = strlen("/bin") + 1;
-    char *bin_buff = (char *) malloc(bin_buff_size);
-    strcpy(bin_buff, "/bin");
-    bin_buff[bin_buff_size - 1] = 0;
-
-    path->payload = (void *) bin_buff;
-    path->next = path;
-    path->prev = path;
+    /* insert node for bin */
+    PushList(path, strdup("/bin"));
 
     return path;
 }
 
-/* Deallocate everything */
-static void DestroyPath(node **path) {
-    node *head = *path;
-    node *curr_node = head->next;
-    while(curr_node != head) {
-        node *temp = curr_node->next;
-        free(curr_node->payload);
-        free(curr_node);
-        curr_node = temp;
-    }
-
-    free(head->payload);
-    free(head);
-    *path = NULL;
+static void AppendToPath(linkedlist *path, char *loc) {
+    PushList(path, strdup(loc));
 }
 
-static void AppendToPath(node **path, char *new_loc) {
-    node *new_node = (node *) malloc(sizeof(node));
-    assert(path != NULL);
-
-    /* Create string for new path location */
-    int new_loc_buff_size = strlen(new_loc) + 1;
-    char *new_loc_buff = (char *) malloc(new_loc_buff_size);
-    strcpy(new_loc_buff, new_loc);
-    new_loc_buff[new_loc_buff_size - 1] = 0;
-    new_node->payload = (void *) new_loc_buff;
-
-    node *head = *path;
-    if (head != NULL) {
-        /* Add new node and stitch things up */
-        head->prev->next = new_node;
-        new_node->prev = head->prev;
-        new_node->next = head;
-        head->prev = new_node;
-    } else {
-        new_node->next = new_node;
-        new_node->prev = new_node;
-        *path = new_node;
+/* Deallocate everything */
+static void DestroyPath(linkedlist *path) {
+    while (path->count > 0) {
+        char *popped_data = (char *) PopList(path);
+        free(popped_data);
     }
+    free(path);
 }
 
 /* Parses string into cmd + arguments based on space character
@@ -220,6 +231,17 @@ static void RunInteractiveMode(void) {
                         }
                     }
                 } else {
+#if 1
+                        node *curr = cmd->argv;
+                        for (int i = 0; i < cmd->argc; i++) {
+                            if (strcmp(curr->payload, "&") == 0) {
+                                printf("\n-------\n");
+                            } else {
+                                printf("*%s*", (char *) curr->payload);
+                            }
+                            curr = curr->next;
+                        }
+#endif
 #if 0
                     /* Code to test that parallel commands are being parsed correctly */
                     printf("Parallel Count = %d\n", cmd->parallel_cnt);

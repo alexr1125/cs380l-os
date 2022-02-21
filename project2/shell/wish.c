@@ -123,7 +123,7 @@ static command *CreateCommand(char *line) {
     cmd->argc = 0;
     cmd->parallel_cnt = 0;
 
-    char *tok = strtok(line, " \n");
+    char *tok = strtok(line, " \n\t");
     while(tok != NULL) {
         node *new_node = (node *) malloc(sizeof(node));
         if (cmd->argc == 0) {
@@ -145,7 +145,7 @@ static command *CreateCommand(char *line) {
         new_payload[strlen(tok)] = 0;  //NULL terminate the new string
         new_node->payload = (void *) new_payload;
         cmd->argc++;
-        tok = strtok(NULL, " \n");
+        tok = strtok(NULL, " \n\t");
     }
 
     if (cmd->parallel_cnt > 0) {
@@ -222,6 +222,7 @@ static void RunInteractiveMode(void) {
                 } else {
 #if 0
                     /* Code to test that parallel commands are being parsed correctly */
+                    printf("Parallel Count = %d\n", cmd->parallel_cnt);
                     if (cmd->parallel_cnt > 0) {
                         node *curr = cmd->argv;
                         for (int i = 0; i < cmd->argc; i++) {

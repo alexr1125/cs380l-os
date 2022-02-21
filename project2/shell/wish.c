@@ -70,23 +70,37 @@ static linkedlist *CreateList(void) {
 /* Inserts a new node at the end  */
 static void InsertList(linkedlist *list, void *data) {
     node *new_node = (node *) malloc(sizeof(node));
-    new_node->data = data;
-    new_node->next = list->head;
-    new_node->prev = list->tail;
-    list->head->prev = new_node;
-    list->tail->next = new_node;
+    if (list->count == 0) {
+        new_node->next = new_node;
+        new_node->prev = new_node;
+        list->head = new_node;
+        list->tail = new_node;
+    } else {
+        new_node->data = data;
+        new_node->next = list->head;
+        new_node->prev = list->tail;
+        list->head->prev = new_node;
+        list->tail->next = new_node;
+    }
+
     list->count++;
 }
 
 /* Returns pointer to the data of the node that removed */
 static void *PopList(linkedlist *list) {
-    node *node_to_remove = list->head;
-    void *data_to_return = node_to_remove->data;
-    list->head = node_to_remove->next;
-    list->tail->next = node_to_remove->next;
-    free(node_to_remove);
-    list->count--;
-    return data_to_return;
+    if (list->count > 0) {
+        node *node_to_remove = list->head;
+        void *data_to_return = node_to_remove->data;
+        list->head = node_to_remove->next;
+        list->tail->next = node_to_remove->next;
+        free(node_to_remove);
+        list->count--;
+        if (list->count == 0) {
+            list->head = NULL;
+            list->tail = NULL;
+        }
+        return data_to_return;
+    }
 }
 
 /*
@@ -128,15 +142,15 @@ static linkedlist *CreateCommand(char *line) {
             new_cmd->redirection = NULL;
             new_cmd->argv = NULL;
             new_cmd->argc = 0;
-            printf("p*%s*p\n", parallel_sep_ptr);
+            //printf("p*%s*p\n", parallel_sep_ptr);
             /* Then parse based on redirection */
             while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
                 if (*redirection_sep_ptr != '\0') {
-                    printf("r*%s*r\n", redirection_sep_ptr);
+                    //printf("r*%s*r\n", redirection_sep_ptr);
                     /* Finally parse on whitespaces */
                     while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
                         if (*whitespace_sep_ptr != '\0') {
-                            printf("w*%s*w\n", whitespace_sep_ptr);
+                            //printf("w*%s*w\n", whitespace_sep_ptr);
                         }
                     }
                 }
@@ -144,7 +158,7 @@ static linkedlist *CreateCommand(char *line) {
         }
     }
 
-
+    free(line_copy);
     return cmd_list;
 }
 

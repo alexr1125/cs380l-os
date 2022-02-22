@@ -27,9 +27,8 @@ typedef struct _linkedlist_ {
 }linkedlist;
 
 typedef struct {
-    linkedlist *argv;   // List of all tokens for this command
-    int argc;   // Number of tokens
-    linkedlist *redirection;
+    linkedlist argv;   // List of all tokens for this command
+    linkedlist redirection;
 } command;
 
 static void RunInteractiveMode(void);
@@ -41,9 +40,9 @@ const char error_message[30] = "An error has occurred\n";
 /* CODE */
 int main(int argc, char *argv[]) {
     if (argc == INTERACTIVE_MODE) {
-        RunInteractiveMode();
+        Run(INTERACTIVE_MODE, NULL);
     } else if (argc == BATCH_MODE) {
-        RunBatchMode(argv[BATCH_MODE-1]);
+        Run(BATCH_MODE, argv[BATCH_MODE-1]);
     } else {
         write(STDERR_FILENO, error_message, strlen(error_message));
         exit(1);
@@ -52,16 +51,22 @@ int main(int argc, char *argv[]) {
     return 0;
 }
 
+static void InitList(linkedlist *list) {
+    assert(list);
+    list->head = NULL;
+    list->tail = NULL;
+    list->count = 0;
+}
+
 /*
     Creates an empty list
     Must free once done with it
 */
 static linkedlist *CreateList(void) {
     linkedlist *new_list = (linkedlist *) malloc(sizeof(linkedlist));
+    assert(new_list);
     if (new_list != NULL) {
-        new_list->head = NULL;
-        new_list->tail = NULL;
-        new_list->count = 0;
+        InitList(new_list);
     }
 
     return new_list;
@@ -69,7 +74,9 @@ static linkedlist *CreateList(void) {
 
 /* Inserts a new node at the end  */
 static void InsertList(linkedlist *list, void *data) {
+    assert(list);
     node *new_node = (node *) malloc(sizeof(node));
+    assert(new_node);
     if (list->count == 0) {
         new_node->next = new_node;
         new_node->prev = new_node;
@@ -88,6 +95,7 @@ static void InsertList(linkedlist *list, void *data) {
 
 /* Returns pointer to the data of the node that removed */
 static void *PopList(linkedlist *list) {
+    assert(list);
     if (list->count > 0) {
         node *node_to_remove = list->head;
         void *data_to_return = node_to_remove->data;
@@ -101,27 +109,32 @@ static void *PopList(linkedlist *list) {
         }
         return data_to_return;
     }
+
+    return NULL;
 }
 
 /*
    Initital will always contain /bin
  */
-static linkedlist *CreatePath(void) {
-    linkedlist *path = CreateList();
-    assert(path != NULL);
+static void InitPath(linkedlist *path) {
+    if (path == NULL) {
+        return;
+    }
+
+    InitList(path);
 
     /* insert node for bin */
-    InsertList(path, strdup("/bin"));
-
-    return path;
+    char *bin_str = strdup("/bin");
+    InsertList(path, bin_str);
 }
 
 static void AppendToPath(linkedlist *path, char *loc) {
-    InsertList(path, strdup(loc));
+    char *loc_str = strdup(loc);
+    InsertList(path, loc_str);
 }
 
 /* Deallocate everything */
-static void DestroyPath(linkedlist *path) {
+static void DeinitPath(linkedlist *path) {
     while (path->count > 0) {
         char *popped_data = (char *) PopList(path);
         free(popped_data);
@@ -129,8 +142,10 @@ static void DestroyPath(linkedlist *path) {
     free(path);
 }
 
-
-static linkedlist *CreateCommand(char *line) {
+/* Initializes command by parsing input line and putting it in cmd_list.
+   If len(linkedlist) > 1, then it is a parallel command
+*/
+static void InitCommandList(linkedlist *cmd_list, char *line) {
     char *line_copy = strdup(line);
     linkedlist *cmd_list = (linkedlist *) malloc(sizeof(linkedlist));
     char *parallel_sep_ptr, *whitespace_sep_ptr, *redirection_sep_ptr;
@@ -162,11 +177,90 @@ static linkedlist *CreateCommand(char *line) {
     return cmd_list;
 }
 
-static void DestroyCommand(command **cmd_ptr) {
+/* User must call DeleteCommand once done with popped command */
+static command *PopCommandList(linkedlist *cmd_list) {
+
+}
+
+static void DeleteCommand(command *cmd) {
+
+}
+
+/* Frees up malloced data and resets variables */
+static void DeinitCommandList(command **cmd_ptr) {
 
 }
 
 
+static void Run(int mode, char *file_path) {
+    FILE *fp;
+    char *line;
+    size_t nread, len;
+    bool is_parallel;
+    linkedlist path, cmds;
+
+    if (mode == BATCH_MODE) {
+        /* Try to open the file. Throw error and quit if it cannot be opened */
+        fp = fopen(file_path, "r");
+        if (fp == NULL) {
+            write(STDERR_FILENO, error_message, strlen(error_message));
+            exit(1);
+        }
+    } else {
+        fp = stdin;
+    }
+    
+    InitPath(&path);
+    while(1) {
+        if (mode == INTERACTIVE_MODE) {
+            printf("wish> ");
+        }
+
+        if ((nread = getline(&line, &len, stdin)) != -1) {
+            InitCommandList(&cmds, line);
+            is_parallel = (cmds.count > 1);
+            if (!is_parallel) {
+                /* Single command. Either built in command or system program*/
+                command *current_cmd = PopCommandList(&cmds);
+                if (current_cmd != NULL) {
+                    char *current_arg = PopList(&current_cmd->argv);
+                    if (strcmp(current_arg, "exit") == 0) {
+
+                    } else if (strcmp(current_arg, "cd") == 0) {
+
+                    } else if(strcmp(current_arg, "path") == 0) {
+
+                    } else {
+                        /* System command. */
+                        /* Iterate through all the paths and see if command is in there */
+                    }
+                    DeleteCommand(current_cmd);
+                }
+            } else {
+                while(cmds.count > 0) {
+                    command *current_cmd = PopCommandList(&cmds);
+                }
+                /* Wait for all of them to finish */
+            }
+
+
+
+            DeinitCommand(&cmds);
+        } else {
+            if (mode == BATCH_MODE) {
+                /* EOF, exit gracefully */
+                goto EXIT;
+            }
+        }
+    }
+
+EXIT:
+    DeinitPath(&path);
+    DeinitCommand(&cmds);
+    exit(0);
+}
+
+#if 0
 static void RunInteractiveMode(void) {
     size_t nread, len;
     char *line = NULL;
@@ -175,7 +269,7 @@ static void RunInteractiveMode(void) {
             /* Parse the command and check if  it's a built in command */
             linkedlist *cmd_list = CreateCommand(line);
         }    
-#if 0
+
     size_t nread, len;
     char *line = NULL;
 
@@ -252,10 +346,5 @@ static void RunInteractiveMode(void) {
             DestroyCommand(&cmd);
         }
     }
+}
 #endif
-}
-
-static void RunBatchMode(char *file_path) {
-    //node *path = CreatePath();
-    printf("Have not implemented this");
-}

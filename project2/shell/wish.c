@@ -113,39 +113,16 @@ static void *PopList(linkedlist *list) {
     return NULL;
 }
 
-/*
-   Initital will always contain /bin
- */
-static void InitPath(linkedlist *path) {
-    if (path == NULL) {
-        return;
+static void ResetPath(linkedlist *path) {
+    while(path->count > 0) {
+        free(PopList(path));
     }
-
-    InitList(path);
-
-    /* insert node for bin */
-    char *bin_str = strdup("/bin");
-    InsertList(path, bin_str);
-}
-
-static void AppendToPath(linkedlist *path, char *loc) {
-    char *loc_str = strdup(loc);
-    InsertList(path, loc_str);
-}
-
-/* Deallocate everything */
-static void DeinitPath(linkedlist *path) {
-    while (path->count > 0) {
-        char *popped_data = (char *) PopList(path);
-        free(popped_data);
-    }
-    free(path);
 }
 
 /* Initializes command by parsing input line and putting it in cmd_list.
    If len(linkedlist) > 1, then it is a parallel command
 */
-static void InitCommandList(linkedlist *cmd_list, char *line) {
+static void ParseCommandList(linkedlist *cmd_list, char *line) {
     char *line_copy = strdup(line);
     linkedlist *cmd_list = (linkedlist *) malloc(sizeof(linkedlist));
     char *parallel_sep_ptr, *whitespace_sep_ptr, *redirection_sep_ptr;
@@ -187,7 +164,7 @@ static void DeleteCommand(command *cmd) {
 }
 
 /* Frees up malloced data and resets variables */
-static void DeinitCommandList(command **cmd_ptr) {
+static void ResetCommandList(linkedlist *cmd_ptr) {
 
 }
 
@@ -210,30 +187,65 @@ static void Run(int mode, char *file_path) {
         fp = stdin;
     }
     
-    InitPath(&path);
+    /* Initialize the path list */
+    InitList(&path);
+    InsertList(&path, strdup("/bin"));
+
     while(1) {
         if (mode == INTERACTIVE_MODE) {
             printf("wish> ");
         }
 
         if ((nread = getline(&line, &len, stdin)) != -1) {
-            InitCommandList(&cmds, line);
+            ParseCommandList(&cmds, line);
             is_parallel = (cmds.count > 1);
             if (!is_parallel) {
                 /* Single command. Either built in command or system program*/
                 command *current_cmd = PopCommandList(&cmds);
                 if (current_cmd != NULL) {
-                    char *current_arg = PopList(&current_cmd->argv);
-                    if (strcmp(current_arg, "exit") == 0) {
+                    char *first_arg = PopList(&current_cmd->argv);
+                    if (first_arg != NULL) {
+                        if (strcmp(first_arg, "exit") == 0) {
+                            if (current_cmd->argv.count > 0) {
+                                /* Error */
+                                write(STDERR_FILENO, error_message, strlen(error_message));
+                            } else {
+                                DeleteCommand(current_cmd);
+                                ResetCommandList(&cmds);
+                                free(first_arg);
+                                exit(0);
+                            }
+                        } else if (strcmp(first_arg, "cd") == 0) {
+                            if (current_cmd->argv.count > 1) {
+                                write(STDERR_FILENO, error_message, strlen(error_message));
+                            } else {
+                                char *cd_path = PopList(&current_cmd->argv);
+                                if (chdir(cd_path) == -1) {
+                                    /* chdir failed so throw an error */
+                                    write(STDERR_FILENO, error_message, strlen(error_message));
+                                }
+                                free(cd_path);
+                            }
+                        } else if(strcmp(first_arg, "path") == 0) {
+                            if (current_cmd->argv.count == 0) {
+                                /* Reset path */
+                                ResetPath(&path);
+                            } else {
+                                /* Iterate through all the arguments and add to path */
+                                while(current_cmd->argv.count > 0){
+                                    char *curr_loc = PopList(&current_cmd->argv);
+                                    InsertList(&path, strdup(curr_loc));
+                                    free(curr_loc);
+                                }
+                            }
+                        } else {
+                            /* System command. */
+                            /* Iterate through all the paths and see if command is in there */
+                        }
 
-                    } else if (strcmp(current_arg, "cd") == 0) {
-
-                    } else if(strcmp(current_arg, "path") == 0) {
-
-                    } else {
-                        /* System command. */
-                        /* Iterate through all the paths and see if command is in there */
+                        free(first_arg);
                     }
+
                     DeleteCommand(current_cmd);
                 }
             } else {
@@ -245,7 +257,7 @@ static void Run(int mode, char *file_path) {
 
 
 
-            DeinitCommand(&cmds);
+            ResetCommandList(&cmds);
         } else {
             if (mode == BATCH_MODE) {
                 /* EOF, exit gracefully */

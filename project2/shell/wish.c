@@ -9,6 +9,7 @@
 #include <unistd.h>
 #include <assert.h>
 #include <stdbool.h>
+#include <fcntl.h>
 
 /* DEFINES */
 #define INTERACTIVE_MODE 1
@@ -131,9 +132,7 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
     while ((parallel_sep_ptr = strsep(&line_copy, "&\n")) != NULL) {
         if (*parallel_sep_ptr != '\0') {
             command *new_cmd = (command *) malloc(sizeof(command));
-            new_cmd->redirection = NULL;
-            new_cmd->argv = NULL;
-            new_cmd->argc = 0;
+            /* TODO: finish */
             //printf("p*%s*p\n", parallel_sep_ptr);
             /* Then parse based on redirection */
             while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
@@ -173,7 +172,6 @@ static void Run(int mode, char *file_path) {
     FILE *fp;
     char *line;
     size_t nread, len;
-    bool is_parallel;
     linkedlist path, cmds;
 
     if (mode == BATCH_MODE) {
@@ -198,64 +196,97 @@ static void Run(int mode, char *file_path) {
 
         if ((nread = getline(&line, &len, stdin)) != -1) {
             ParseCommandList(&cmds, line);
-            is_parallel = (cmds.count > 1);
-            if (!is_parallel) {
-                /* Single command. Either built in command or system program*/
-                command *current_cmd = PopCommandList(&cmds);
-                if (current_cmd != NULL) {
-                    char *first_arg = PopList(&current_cmd->argv);
-                    if (first_arg != NULL) {
-                        if (strcmp(first_arg, "exit") == 0) {
-                            if (current_cmd->argv.count > 0) {
-                                /* Error */
-                                write(STDERR_FILENO, error_message, strlen(error_message));
-                            } else {
-                                DeleteCommand(current_cmd);
-                                ResetCommandList(&cmds);
-                                free(first_arg);
-                                exit(0);
-                            }
-                        } else if (strcmp(first_arg, "cd") == 0) {
-                            if (current_cmd->argv.count > 1) {
-                                write(STDERR_FILENO, error_message, strlen(error_message));
-                            } else {
-                                char *cd_path = PopList(&current_cmd->argv);
-                                if (chdir(cd_path) == -1) {
-                                    /* chdir failed so throw an error */
-                                    write(STDERR_FILENO, error_message, strlen(error_message));
-                                }
-                                free(cd_path);
-                            }
-                        } else if(strcmp(first_arg, "path") == 0) {
-                            if (current_cmd->argv.count == 0) {
-                                /* Reset path */
-                                ResetPath(&path);
-                            } else {
-                                /* Iterate through all the arguments and add to path */
-                                while(current_cmd->argv.count > 0){
-                                    char *curr_loc = PopList(&current_cmd->argv);
-                                    InsertList(&path, strdup(curr_loc));
-                                    free(curr_loc);
-                                }
-                            }
-                        } else {
-                            /* System command. */
-                            /* Iterate through all the paths and see if command is in there */
-                        }
 
-                        free(first_arg);
+            command *current_cmd = PopCommandList(&cmds);
+            if (current_cmd != NULL) {
+                char *first_arg = PopList(&current_cmd->argv);
+                if (first_arg != NULL) {
+                    if (strcmp(first_arg, "exit") == 0) {
+                        if (current_cmd->argv.count > 0) {
+                            /* Error */
+                            write(STDERR_FILENO, error_message, strlen(error_message));
+                        } else {
+                            DeleteCommand(current_cmd);
+                            ResetCommandList(&cmds);
+                            free(first_arg);
+                            exit(0);
+                        }
+                    } else if (strcmp(first_arg, "cd") == 0) {
+                        if (current_cmd->argv.count > 1) {
+                            write(STDERR_FILENO, error_message, strlen(error_message));
+                        } else {
+                            char *cd_path = PopList(&current_cmd->argv);
+                            if (chdir(cd_path) == -1) {
+                                /* chdir failed so throw an error */
+                                write(STDERR_FILENO, error_message, strlen(error_message));
+                            }
+                            free(cd_path);
+                        }
+                    } else if(strcmp(first_arg, "path") == 0) {
+                        if (current_cmd->argv.count == 0) {
+                            /* Reset path */
+                            ResetPath(&path);
+                        } else {
+                            /* Iterate through all the arguments and add to path */
+                            while(current_cmd->argv.count > 0){
+                                char *curr_loc = PopList(&current_cmd->argv);
+                                InsertList(&path, strdup(curr_loc));
+                                free(curr_loc);
+                            }
+                        }
+                    } else {
+                        /* System command. */
+                        /* Iterate through all the paths and see if command is in there */
+                        while(current_cmd != NULL) {
+                            int my_argc = current_cmd->argv.count + 1;  //+1 for the one that has already been popped
+                            char **my_args = (char **)malloc(sizeof(char *)*(my_argc + 1));
+                            my_args[0] = first_arg;
+                            my_args[my_argc] = NULL;    // NULL terminate the arg list
+                            for (int i = 1; i < my_argc; i++) {
+                                my_args[i] = PopList(&current_cmd->argv);
+                            }
+
+                            char *redirect_file = NULL;
+                            if(current_cmd->redirection.count > 0) {
+                                /* Redirect output to specified file */
+                                redirect_file = PopList(current_cmd->redirection.count);
+                            }
+
+                            /* Create the child process and execute the command */
+                            int rc = fork();
+                            if (rc < 0) {
+                                /* Error */
+                            } else if (rc == 0) {
+                                if (redirect_file != NULL) {
+                                    close(STDOUT_FILENO);
+                                    open(redirect_file, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU);
+                                    free(redirect_file);                                    
+                                }
+                            } else {
+                                /* Free the memory allocated for the arg list */
+                                for (int i = 0; i < my_argc; i++) {
+                                    free(my_args[i]);
+                                }
+                                free(my_args);
+
+                                /* Free current command memory and get the next one */
+                                DeleteCommand(current_cmd);
+                                current_cmd = PopList(&cmds);
+                                if (current_cmd != NULL) {
+                                    first_arg = PopList(&current_cmd->argv);
+                                }
+                            }
+                        }
+                        /* Wait for cmds to finish executing */
+                        int wpid, wstatus;
+                        while ((wpid = wait(&wstatus)) > 0);
                     }
 
-                    DeleteCommand(current_cmd);
+                    free(first_arg);
                 }
-            } else {
-                while(cmds.count > 0) {
-                    command *current_cmd = PopCommandList(&cmds);
-                }
-                /* Wait for all of them to finish */
+
+                DeleteCommand(current_cmd);
             }
-
-
 
             ResetCommandList(&cmds);
         } else {

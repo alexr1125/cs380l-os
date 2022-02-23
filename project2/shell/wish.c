@@ -70,13 +70,13 @@ static void InsertList(linkedlist *list, void *data) {
     assert(list);
     node *new_node = (node *) malloc(sizeof(node));
     assert(new_node);
+    new_node->data = data;
     if (list->count == 0) {
         new_node->next = new_node;
         new_node->prev = new_node;
         list->head = new_node;
         list->tail = new_node;
     } else {
-        new_node->data = data;
         new_node->next = list->head;
         new_node->prev = list->tail;
         list->head->prev = new_node;
@@ -127,10 +127,12 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
     while ((parallel_sep_ptr = strsep(&line_copy, "&\n")) != NULL) {
         if (*parallel_sep_ptr != '\0') {
             command *new_cmd = (command *) malloc(sizeof(command));
-            /* TODO: finish */
+            InitList(&new_cmd->argv);
+            InitList(&new_cmd->redirection);
             printf("p*%s*p\n", parallel_sep_ptr);
             /* Then parse based on redirection if any */
             if (strstr(parallel_sep_ptr, ">") != NULL) {
+                int redirection_i = 0;
                 while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
                     if (*redirection_sep_ptr != '\0') {
                         printf("r*%s*r\n", redirection_sep_ptr);
@@ -138,9 +140,15 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
                         while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
                             if (*whitespace_sep_ptr != '\0') {
                                 printf("w*%s*w\n", whitespace_sep_ptr);
+                                if (redirection_i == 0) {
+                                    InsertList(&new_cmd->argv, strdup(whitespace_sep_ptr));
+                                } else {
+                                    InsertList(&new_cmd->redirection, strdup(whitespace_sep_ptr));
+                                }
                             }
                         }
                     }
+                    redirection_i++;
                 }
 
                 /* Check if redirect is > 1. If so, then deallocate everything and return NULL */
@@ -149,9 +157,11 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
                 while ((whitespace_sep_ptr = strsep(&parallel_sep_ptr, " \t")) != NULL) {
                     if (*whitespace_sep_ptr != '\0') {
                         printf("w*%s*w\n", whitespace_sep_ptr);
+                         InsertList(&new_cmd->argv, strdup(whitespace_sep_ptr));
                     }
                 }
             }
+            InsertList(cmd_list, new_cmd);
         }
     }
 
@@ -189,7 +199,19 @@ static void ResetCommandList(linkedlist *cmd_list_ptr) {
 static void Run(int mode, char *file_path) {
     linkedlist cmds;
     InitList(&cmds);
-    ParseCommandList(&cmds, "tok1 tok2 tok3>toka & tok4 tok5");
+    ParseCommandList(&cmds, "tok1 tok2 tok3");
+    char *arg, *redirect;
+    command *cmd;
+    printf("---------\n");
+    int i = 0;
+    cmd = PopList(&cmds);
+    while(cmd != NULL) {
+
+        DeleteCommand(cmd);
+        cmd = PopList(&cmds);
+    }
+
+    //ResetCommandList(&cmds);
 #if 0
     FILE *fp;
     char *line;

@@ -32,8 +32,14 @@ typedef struct {
     linkedlist redirection;
 } command;
 
-static void RunInteractiveMode(void);
-static void RunBatchMode(char *file_path);
+static void InitList(linkedlist *list);
+static void InsertList(linkedlist *list, void *data);
+static void *PopList(linkedlist *list);
+static void ResetPath(linkedlist *path);
+static void ParseCommandList(linkedlist *cmd_list, char *line);
+static void DeleteCommand(command *cmd);
+static void ResetCommandList(linkedlist *cmd_list_ptr);
+static void Run(int mode, char *file_path);
 
 /* GLOBAL VARIABLES */
 const char error_message[30] = "An error has occurred\n";
@@ -59,20 +65,6 @@ static void InitList(linkedlist *list) {
     list->count = 0;
 }
 
-/*
-    Creates an empty list
-    Must free once done with it
-*/
-static linkedlist *CreateList(void) {
-    linkedlist *new_list = (linkedlist *) malloc(sizeof(linkedlist));
-    assert(new_list);
-    if (new_list != NULL) {
-        InitList(new_list);
-    }
-
-    return new_list;
-}
-
 /* Inserts a new node at the end  */
 static void InsertList(linkedlist *list, void *data) {
     assert(list);
@@ -94,7 +86,7 @@ static void InsertList(linkedlist *list, void *data) {
     list->count++;
 }
 
-/* Returns pointer to the data of the node that removed */
+/* Returns pointer to the data of the node that was removed */
 static void *PopList(linkedlist *list) {
     assert(list);
     if (list->count > 0) {
@@ -115,8 +107,10 @@ static void *PopList(linkedlist *list) {
 }
 
 static void ResetPath(linkedlist *path) {
-    while(path->count > 0) {
-        free(PopList(path));
+    if (path != NULL) {
+        while(path->count > 0) {
+            free(PopList(path));
+        }
     }
 }
 
@@ -124,9 +118,9 @@ static void ResetPath(linkedlist *path) {
    If len(linkedlist) > 1, then it is a parallel command.
    Error check here.
 */
+
 static void ParseCommandList(linkedlist *cmd_list, char *line) {
     char *line_copy = strdup(line);
-    linkedlist *cmd_list = (linkedlist *) malloc(sizeof(linkedlist));
     char *parallel_sep_ptr, *whitespace_sep_ptr, *redirection_sep_ptr;
 
     /* First separate based on '&' and newline */
@@ -134,16 +128,27 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
         if (*parallel_sep_ptr != '\0') {
             command *new_cmd = (command *) malloc(sizeof(command));
             /* TODO: finish */
-            //printf("p*%s*p\n", parallel_sep_ptr);
-            /* Then parse based on redirection */
-            while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
-                if (*redirection_sep_ptr != '\0') {
-                    //printf("r*%s*r\n", redirection_sep_ptr);
-                    /* Finally parse on whitespaces */
-                    while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
-                        if (*whitespace_sep_ptr != '\0') {
-                            //printf("w*%s*w\n", whitespace_sep_ptr);
+            printf("p*%s*p\n", parallel_sep_ptr);
+            /* Then parse based on redirection if any */
+            if (strstr(parallel_sep_ptr, ">") != NULL) {
+                while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
+                    if (*redirection_sep_ptr != '\0') {
+                        printf("r*%s*r\n", redirection_sep_ptr);
+                        /* Finally parse on whitespaces */
+                        while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
+                            if (*whitespace_sep_ptr != '\0') {
+                                printf("w*%s*w\n", whitespace_sep_ptr);
+                            }
                         }
+                    }
+                }
+
+                /* Check if redirect is > 1. If so, then deallocate everything and return NULL */
+            } else {
+                /* parse on whitespaces since there is no redirection */
+                while ((whitespace_sep_ptr = strsep(&parallel_sep_ptr, " \t")) != NULL) {
+                    if (*whitespace_sep_ptr != '\0') {
+                        printf("w*%s*w\n", whitespace_sep_ptr);
                     }
                 }
             }
@@ -151,25 +156,41 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
     }
 
     free(line_copy);
-    return cmd_list;
-}
-
-/* User must call DeleteCommand once done with popped command */
-static command *PopCommandList(linkedlist *cmd_list) {
-
 }
 
 static void DeleteCommand(command *cmd) {
+    char *arg_str = PopList(&cmd->argv);
+    while (arg_str != NULL) {
+        free(arg_str);
+        arg_str = PopList(&cmd->argv);
+    }
 
+    char *redirect_str = PopList(&cmd->redirection);
+    while (redirect_str != NULL) {
+        free(redirect_str);
+        redirect_str = PopList(&cmd->redirection);
+    }
+
+    free(cmd);
 }
 
 /* Frees up malloced data and resets variables */
-static void ResetCommandList(linkedlist *cmd_ptr) {
-
+static void ResetCommandList(linkedlist *cmd_list_ptr) {
+    assert(cmd_list_ptr);
+    command *cmd = PopList(cmd_list_ptr);
+    while(cmd!= NULL) {
+        DeleteCommand(cmd);
+        cmd = PopList(cmd_list_ptr);
+    }
+    
 }
 
 
 static void Run(int mode, char *file_path) {
+    linkedlist cmds;
+    InitList(&cmds);
+    ParseCommandList(&cmds, "tok1 tok2 tok3>toka & tok4 tok5");
+#if 0
     FILE *fp;
     char *line;
     size_t nread, len;
@@ -198,7 +219,7 @@ static void Run(int mode, char *file_path) {
         if ((nread = getline(&line, &len, fp)) != -1) {
             ParseCommandList(&cmds, line);
 
-            command *current_cmd = PopCommandList(&cmds);
+            command *current_cmd = PopList(&cmds);
             if (current_cmd != NULL) {
                 char *first_arg = PopList(&current_cmd->argv);
                 if (first_arg != NULL) {
@@ -212,6 +233,8 @@ static void Run(int mode, char *file_path) {
                             free(first_arg);
                             exit(0);
                         }
+                        DeleteCommand(current_cmd);
+                        free(first_arg);                        
                     } else if (strcmp(first_arg, "cd") == 0) {
                         if (current_cmd->argv.count > 1) {
                             write(STDERR_FILENO, error_message, strlen(error_message));
@@ -221,9 +244,10 @@ static void Run(int mode, char *file_path) {
                                 /* chdir failed so throw an error */
                                 write(STDERR_FILENO, error_message, strlen(error_message));
                             }
-                            free(first_arg);
                             free(cd_path);
                         }
+                        free(first_arg);
+                        DeleteCommand(current_cmd);
                     } else if(strcmp(first_arg, "path") == 0) {
                         if (current_cmd->argv.count == 0) {
                             /* Reset path */
@@ -237,6 +261,7 @@ static void Run(int mode, char *file_path) {
                             }
                         }
                         free(first_arg);
+                        DeleteCommand(current_cmd);
                     } else {
                         /* System command. */
                         while(current_cmd != NULL) {
@@ -271,7 +296,7 @@ static void Run(int mode, char *file_path) {
                                 char *redirect_file = NULL;
                                 if(current_cmd->redirection.count > 0) {
                                     /* Redirect output to specified file */
-                                    redirect_file = PopList(current_cmd->redirection.count);
+                                    redirect_file = PopList(&current_cmd->redirection);
                                 }
 
                                 /* Create the child process and execute the command */
@@ -287,6 +312,7 @@ static void Run(int mode, char *file_path) {
 
                                     execv(my_args[0], my_args);
 
+                                    return 0;
                                 } else {
                                     /* Free the memory allocated for the arg list */
                                     for (int i = 0; i < my_argc; i++) {
@@ -314,6 +340,9 @@ static void Run(int mode, char *file_path) {
                 } else {
                     DeleteCommand(current_cmd);
                 }
+            } else {
+                /* Error occurred */
+                write(STDERR_FILENO, error_message, strlen(error_message));
             }
 
             ResetCommandList(&cmds);
@@ -325,4 +354,5 @@ static void Run(int mode, char *file_path) {
             }
         }
     }
+#endif
 }

@@ -155,6 +155,8 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
                     /* Either too many redirects or missing redirect file */
                     DeleteCommand(new_cmd);
                     ResetCommandList(cmd_list);
+                    /* Error occurred */
+                    write(STDERR_FILENO, error_message, strlen(error_message));
                    break;
                 }
             } else {
@@ -410,8 +412,6 @@ static void Run(int mode, char *file_path) {
                     DeleteCommand(current_cmd);
                 }
             } else {
-                /* Error occurred */
-                write(STDERR_FILENO, error_message, strlen(error_message));
             }
 
             ResetCommandList(&cmds);

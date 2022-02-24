@@ -18,7 +18,6 @@
 typedef struct _node_ {
     void *data;
     struct _node_ *next;
-    struct _node_ *prev;
 } node;
 
 typedef struct _linkedlist_ {
@@ -66,21 +65,18 @@ static void InitList(linkedlist *list) {
 }
 
 /* Inserts a new node at the end  */
-static void InsertList(linkedlist *list, void *data) {
+static void InsertList(linkedlist *list, void *user_data) {
     assert(list);
     node *new_node = (node *) malloc(sizeof(node));
     assert(new_node);
-    new_node->data = data;
-    if (list->count == 0) {
-        new_node->next = new_node;
-        new_node->prev = new_node;
-        list->head = new_node;
+    new_node->data = user_data;
+    new_node->next = NULL;
+    if (list->count > 0) {
+        list->tail->next = new_node;
         list->tail = new_node;
     } else {
-        new_node->next = list->head;
-        new_node->prev = list->tail;
-        list->head->prev = new_node;
-        list->tail->next = new_node;
+        list->head = new_node;
+        list->tail = new_node;
     }
 
     list->count++;
@@ -89,27 +85,22 @@ static void InsertList(linkedlist *list, void *data) {
 /* Returns pointer to the data of the node that was removed */
 static void *PopList(linkedlist *list) {
     assert(list);
-    if (list->count > 0) {
-        node *node_to_remove = list->head;
-        void *data_to_return = node_to_remove->data;
-        list->head = node_to_remove->next;
-        list->tail->next = node_to_remove->next;
-        free(node_to_remove);
+
+    void *user_data = NULL;
+    if (list->head != NULL) {
+        user_data = list->head->data;
+        list->head = list->head->next;
         list->count--;
-        if (list->count == 0) {
-            list->head = NULL;
-            list->tail = NULL;
-        }
-        return data_to_return;
     }
 
-    return NULL;
+    return user_data;
 }
 
 static void ResetPath(linkedlist *path) {
     if (path != NULL) {
-        while(path->count > 0) {
-            free(PopList(path));
+        char *data_to_free;
+        while((data_to_free = PopList(path)) != NULL) {
+            free(data_to_free);
         }
     }
 }
@@ -122,24 +113,22 @@ static void ResetPath(linkedlist *path) {
 static void ParseCommandList(linkedlist *cmd_list, char *line) {
     char *line_copy = strdup(line);
     char *parallel_sep_ptr, *whitespace_sep_ptr, *redirection_sep_ptr;
+    command *new_cmd;
 
     /* First separate based on '&' and newline */
     while ((parallel_sep_ptr = strsep(&line_copy, "&\n")) != NULL) {
         if (*parallel_sep_ptr != '\0') {
-            command *new_cmd = (command *) malloc(sizeof(command));
+            new_cmd = (command *) malloc(sizeof(command));
             InitList(&new_cmd->argv);
             InitList(&new_cmd->redirection);
-            printf("p*%s*p\n", parallel_sep_ptr);
             /* Then parse based on redirection if any */
             if (strstr(parallel_sep_ptr, ">") != NULL) {
                 int redirection_i = 0;
                 while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
                     if (*redirection_sep_ptr != '\0') {
-                        printf("r*%s*r\n", redirection_sep_ptr);
                         /* Finally parse on whitespaces */
                         while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
                             if (*whitespace_sep_ptr != '\0') {
-                                printf("w*%s*w\n", whitespace_sep_ptr);
                                 if (redirection_i == 0) {
                                     InsertList(&new_cmd->argv, strdup(whitespace_sep_ptr));
                                 } else {
@@ -156,8 +145,7 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
                 /* parse on whitespaces since there is no redirection */
                 while ((whitespace_sep_ptr = strsep(&parallel_sep_ptr, " \t")) != NULL) {
                     if (*whitespace_sep_ptr != '\0') {
-                        printf("w*%s*w\n", whitespace_sep_ptr);
-                         InsertList(&new_cmd->argv, strdup(whitespace_sep_ptr));
+                        InsertList(&new_cmd->argv, strdup(whitespace_sep_ptr));
                     }
                 }
             }
@@ -199,19 +187,27 @@ static void ResetCommandList(linkedlist *cmd_list_ptr) {
 static void Run(int mode, char *file_path) {
     linkedlist cmds;
     InitList(&cmds);
-    ParseCommandList(&cmds, "tok1 tok2 tok3");
-    char *arg, *redirect;
+    ParseCommandList(&cmds, "tok1 tok2 tok3>tok4&tok5");
     command *cmd;
-    printf("---------\n");
     int i = 0;
-    cmd = PopList(&cmds);
-    while(cmd != NULL) {
-
+    while ((cmd = PopList(&cmds)) != NULL) {
+        char *token;
+        printf("CMD %d:\n", i);
+        while ((token = PopList(&cmd->argv)) != NULL) {
+            printf("*%s* ", token);
+            free(token);
+        }
+        printf("\n------\n");
+        while ((token = PopList(&cmd->redirection)) != NULL) {
+            printf("*%s* ", token);
+            free(token);
+        }
+        printf("\n------\n");    
         DeleteCommand(cmd);
-        cmd = PopList(&cmds);
+        i++;
     }
-
-    //ResetCommandList(&cmds);
+    ResetCommandList(&cmds);
+    return;
 #if 0
     FILE *fp;
     char *line;

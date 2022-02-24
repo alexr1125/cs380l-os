@@ -113,6 +113,7 @@ static void ResetPath(linkedlist *path) {
 
 static void ParseCommandList(linkedlist *cmd_list, char *line) {
     char *line_copy = strdup(line);
+    assert(line_copy);
     char *parallel_sep_ptr, *whitespace_sep_ptr, *redirection_sep_ptr;
     command *new_cmd;
 
@@ -130,10 +131,12 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
                         /* Finally parse on whitespaces */
                         while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
                             if (*whitespace_sep_ptr != '\0') {
+                                char *temp_ptr = strdup(whitespace_sep_ptr);
+                                assert(temp_ptr);
                                 if (redirection_i == 0) {
-                                    InsertList(&new_cmd->argv, strdup(whitespace_sep_ptr));
+                                    InsertList(&new_cmd->argv, temp_ptr);
                                 } else {
-                                    InsertList(&new_cmd->redirection, strdup(whitespace_sep_ptr));
+                                    InsertList(&new_cmd->redirection, temp_ptr);
                                 }
                             }
                         }
@@ -146,7 +149,9 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
                 /* parse on whitespaces since there is no redirection */
                 while ((whitespace_sep_ptr = strsep(&parallel_sep_ptr, " \t")) != NULL) {
                     if (*whitespace_sep_ptr != '\0') {
-                        InsertList(&new_cmd->argv, strdup(whitespace_sep_ptr));
+                        char *temp_ptr = strdup(whitespace_sep_ptr);
+                        assert(temp_ptr);
+                        InsertList(&new_cmd->argv, temp_ptr);
                     }
                 }
             }
@@ -187,28 +192,51 @@ static void ResetCommandList(linkedlist *cmd_list_ptr) {
 
 static void Run(int mode, char *file_path) {
 #if 0
-    linkedlist cmds;
+    linkedlist cmds,path;
+    InitList(&path);
+    InsertList(&path, strdup("/bin"));
     InitList(&cmds);
-    ParseCommandList(&cmds, "tok1 tok2 tok3>tok4&tok5&tok6>tok7");
-    command *cmd;
-    int i = 0;
-    while ((cmd = PopList(&cmds)) != NULL) {
-        char *token;
-        printf("CMD %d:\n", i);
-        while ((token = PopList(&cmd->argv)) != NULL) {
-            printf("*%s* ", token);
-            free(token);
+    FILE *fp;
+    char *line;
+    size_t nread, len;
+
+    if (mode == BATCH_MODE) {
+        /* Try to open the file. Throw error and quit if it cannot be opened */
+        fp = fopen(file_path, "r");
+        if (fp == NULL) {
+            write(STDERR_FILENO, error_message, strlen(error_message));
+            exit(1);
         }
-        printf("\n------\n");
-        while ((token = PopList(&cmd->redirection)) != NULL) {
-            printf("*%s* ", token);
-            free(token);
+    } else {
+        fp = stdin;
+    }    
+    line = NULL;
+    if ((nread = getline(&line, &len, fp)) != -1) {
+        printf("line: *%s*\n", line);
+        ParseCommandList(&cmds, line);
+        command *cmd;
+        int i = 0;
+        while ((cmd = PopList(&cmds)) != NULL) {
+            char *token;
+            printf("CMD %d:\n", i);
+            while ((token = PopList(&cmd->argv)) != NULL) {
+                printf("*%s* ", token);
+                free(token);
+            }
+            printf("\n------\n");
+            while ((token = PopList(&cmd->redirection)) != NULL) {
+                printf("*%s* ", token);
+                free(token);
+            }
+            printf("\n------\n");    
+            DeleteCommand(cmd);
+            i++;
         }
-        printf("\n------\n");    
-        DeleteCommand(cmd);
-        i++;
+        ResetCommandList(&cmds);
+        free(line);
+        line = NULL;
     }
-    ResetCommandList(&cmds);
+    ResetPath(&path);
     return;
 #else
     FILE *fp;
@@ -229,13 +257,15 @@ static void Run(int mode, char *file_path) {
     
     /* Initialize the path list */
     InitList(&path);
-    InsertList(&path, strdup("/bin"));
+    char *initial_path = strdup("/bin");
+    assert(initial_path);
+    InsertList(&path, initial_path);
 
     while(1) {
         if (mode == INTERACTIVE_MODE) {
             printf("wish> ");
         }
-
+        line = NULL;
         if ((nread = getline(&line, &len, fp)) != -1) {
             ParseCommandList(&cmds, line);
 
@@ -251,12 +281,14 @@ static void Run(int mode, char *file_path) {
                             DeleteCommand(current_cmd);
                             ResetCommandList(&cmds);
                             free(first_arg);
+                            free(line);
+                            ResetPath(&path);
                             exit(0);
                         }
-                        DeleteCommand(current_cmd);
-                        free(first_arg);                        
+                        free(first_arg);
+                        DeleteCommand(current_cmd);                        
                     } else if (strcmp(first_arg, "cd") == 0) {
-                        if (current_cmd->argv.count > 1) {
+                        if (current_cmd->argv.count != 1) {
                             write(STDERR_FILENO, error_message, strlen(error_message));
                         } else {
                             char *cd_path = PopList(&current_cmd->argv);
@@ -274,9 +306,11 @@ static void Run(int mode, char *file_path) {
                             ResetPath(&path);
                         } else {
                             /* Iterate through all the arguments and add to path */
-                            while(current_cmd->argv.count > 0){
-                                char *curr_loc = PopList(&current_cmd->argv);
-                                InsertList(&path, strdup(curr_loc));
+                            char *curr_loc;
+                            while((curr_loc = PopList(&current_cmd->argv)) != NULL){
+                                char *temp_ptr = strdup(curr_loc);
+                                assert(temp_ptr);
+                                InsertList(&path, temp_ptr);
                                 free(curr_loc);
                             }
                         }
@@ -289,8 +323,8 @@ static void Run(int mode, char *file_path) {
                             node *current_path_node = path.head;
                             char *cmd_path = NULL;
                             while (current_path_node != NULL) {
-                                int temp_path_str_len = strlen(current_path_node->data)+strlen(first_arg);
-                                char *temp_path_str = (char *)malloc(temp_path_str_len + 1);
+                                int temp_path_str_len = strlen(current_path_node->data) + strlen(first_arg);
+                                char *temp_path_str = (char *) malloc(temp_path_str_len + 1);
                                 sprintf(temp_path_str, "%s%s", (char *) current_path_node->data, first_arg);
                                 if (access(temp_path_str, X_OK) == 0) {
                                     cmd_path = temp_path_str;
@@ -324,31 +358,32 @@ static void Run(int mode, char *file_path) {
                                 } else if (rc == 0) {
                                     if (redirect_file != NULL) {
                                         close(STDOUT_FILENO);
-                                        open(redirect_file, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU);
-                                        free(redirect_file);                                    
+                                        open(redirect_file, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU);                                 
                                     }
 
                                     execv(my_args[0], my_args);
-
-                                    exit(0);
+                                    _exit(0);
                                 } else {
+                                    /* Parent enters here */
                                     /* Free the memory allocated for the arg list */
                                     for (int i = 0; i < my_argc; i++) {
                                         free(my_args[i]);
                                     }
                                     free(my_args);
-                                    free(redirect_file);
-                                    /* Free current command memory and get the next one */
-                                    DeleteCommand(current_cmd);
-                                    current_cmd = PopList(&cmds);
-                                    if (current_cmd != NULL) {
-                                        first_arg = PopList(&current_cmd->argv);
+
+                                    if (redirect_file != NULL) {
+                                        free(redirect_file);
                                     }
                                 }
                             } else {
                                 write(STDERR_FILENO, error_message, strlen(error_message));
-                                free(first_arg);
-                                DeleteCommand(current_cmd);
+                            }
+
+                            /* Free current command memory and get the next one */
+                            DeleteCommand(current_cmd);
+                            current_cmd = PopList(&cmds);
+                            if (current_cmd != NULL) {
+                                first_arg = PopList(&current_cmd->argv);
                             }
                         }
                         /* Wait for cmd(s) to finish executing */
@@ -365,6 +400,7 @@ static void Run(int mode, char *file_path) {
 
             ResetCommandList(&cmds);
         } else {
+            free(line);
             if (mode == BATCH_MODE) {
                 /* EOF, exit gracefully */
                 ResetPath(&path);

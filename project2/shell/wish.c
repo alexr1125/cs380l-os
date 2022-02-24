@@ -77,7 +77,7 @@ static void InsertList(linkedlist *list, void *user_data) {
         list->tail = new_node;
     } else {
         list->head = new_node;
-        list->tail = new_node;
+        list->tail = NULL;
     }
 
     list->count++;
@@ -94,6 +94,11 @@ static void *PopList(linkedlist *list) {
         list->count--;
     }
 
+    if (list->count == 0) {
+        list->head = NULL;
+        list->tail = NULL;
+    }
+    
     return user_data;
 }
 
@@ -323,11 +328,12 @@ static void Run(int mode, char *file_path) {
                             node *current_path_node = path.head;
                             char *cmd_path = NULL;
                             while (current_path_node != NULL) {
-                                int temp_path_str_len = strlen(current_path_node->data) + strlen(first_arg);
+                                int temp_path_str_len = strlen(current_path_node->data) + strlen(first_arg) + 1;
                                 char *temp_path_str = (char *) malloc(temp_path_str_len + 1);
-                                sprintf(temp_path_str, "%s%s", (char *) current_path_node->data, first_arg);
+                                sprintf(temp_path_str, "%s/%s", (char *) current_path_node->data, first_arg);
                                 if (access(temp_path_str, X_OK) == 0) {
-                                    cmd_path = temp_path_str;
+                                    cmd_path = current_path_node->data;
+                                    free(temp_path_str);
                                     break;
                                 }
                                 free(temp_path_str);
@@ -336,10 +342,9 @@ static void Run(int mode, char *file_path) {
                             
                             /* If command found in path, then get args and execute */
                             if (cmd_path != NULL){
-                                free(first_arg);
                                 int my_argc = current_cmd->argv.count + 1;  //+1 for the one that has already been popped
                                 char **my_args = (char **)malloc(sizeof(char *)*(my_argc + 1)); //+1 for null termination
-                                my_args[0] = cmd_path;
+                                my_args[0] = first_arg;
                                 my_args[my_argc] = NULL;    // NULL terminate the arg list
                                 for (int i = 1; i < my_argc; i++) {
                                     my_args[i] = PopList(&current_cmd->argv);
@@ -360,7 +365,7 @@ static void Run(int mode, char *file_path) {
                                         close(STDOUT_FILENO);
                                         open(redirect_file, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU);                                 
                                     }
-
+                                    chdir(cmd_path);
                                     execv(my_args[0], my_args);
                                     _exit(0);
                                 } else {

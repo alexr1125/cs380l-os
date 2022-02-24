@@ -10,6 +10,7 @@
 #include <assert.h>
 #include <stdbool.h>
 #include <fcntl.h>
+#include <sys/wait.h>
 
 /* DEFINES */
 #define INTERACTIVE_MODE 1
@@ -185,9 +186,10 @@ static void ResetCommandList(linkedlist *cmd_list_ptr) {
 
 
 static void Run(int mode, char *file_path) {
+#if 0
     linkedlist cmds;
     InitList(&cmds);
-    ParseCommandList(&cmds, "tok1 tok2 tok3>tok4&tok5");
+    ParseCommandList(&cmds, "tok1 tok2 tok3>tok4&tok5&tok6>tok7");
     command *cmd;
     int i = 0;
     while ((cmd = PopList(&cmds)) != NULL) {
@@ -208,7 +210,7 @@ static void Run(int mode, char *file_path) {
     }
     ResetCommandList(&cmds);
     return;
-#if 0
+#else
     FILE *fp;
     char *line;
     size_t nread, len;
@@ -284,14 +286,12 @@ static void Run(int mode, char *file_path) {
                         /* System command. */
                         while(current_cmd != NULL) {
                             /* Iterate through paths to see if cmd is in one of them */
-                            node *current_path_node = &path.head;
+                            node *current_path_node = path.head;
                             char *cmd_path = NULL;
-                            for (int i = 0; i < path.count; i++) {
+                            while (current_path_node != NULL) {
                                 int temp_path_str_len = strlen(current_path_node->data)+strlen(first_arg);
                                 char *temp_path_str = (char *)malloc(temp_path_str_len + 1);
-                                memcpy(temp_path_str, &current_path_node->data, strlen(current_path_node->data));
-                                memcpy(&temp_path_str[strlen(current_path_node->data)], &current_path_node->data, strlen(current_path_node->data));
-                                temp_path_str[temp_path_str_len] = NULL;
+                                sprintf(temp_path_str, "%s%s", (char *) current_path_node->data, first_arg);
                                 if (access(temp_path_str, X_OK) == 0) {
                                     cmd_path = temp_path_str;
                                     break;
@@ -330,7 +330,7 @@ static void Run(int mode, char *file_path) {
 
                                     execv(my_args[0], my_args);
 
-                                    return 0;
+                                    exit(0);
                                 } else {
                                     /* Free the memory allocated for the arg list */
                                     for (int i = 0; i < my_argc; i++) {

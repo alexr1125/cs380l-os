@@ -77,7 +77,7 @@ static void InsertList(linkedlist *list, void *user_data) {
         list->tail = new_node;
     } else {
         list->head = new_node;
-        list->tail = NULL;
+        list->tail = new_node;
     }
 
     list->count++;
@@ -117,8 +117,7 @@ static void ResetPath(linkedlist *path) {
 */
 
 static void ParseCommandList(linkedlist *cmd_list, char *line) {
-    char *line_copy = strdup(line);
-    assert(line_copy);
+    char *line_copy = line;
     char *parallel_sep_ptr, *whitespace_sep_ptr, *redirection_sep_ptr;
     command *new_cmd;
 
@@ -129,15 +128,17 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
             InitList(&new_cmd->argv);
             InitList(&new_cmd->redirection);
             /* Then parse based on redirection if any */
+            int redirection_i = 0;
             if (strstr(parallel_sep_ptr, ">") != NULL) {
-                int redirection_i = 0;
                 while ((redirection_sep_ptr = strsep(&parallel_sep_ptr, ">")) != NULL) {
                     if (*redirection_sep_ptr != '\0') {
                         /* Finally parse on whitespaces */
                         while ((whitespace_sep_ptr = strsep(&redirection_sep_ptr, " \t")) != NULL) {
                             if (*whitespace_sep_ptr != '\0') {
                                 char *temp_ptr = strdup(whitespace_sep_ptr);
-                                assert(temp_ptr);
+                                if (temp_ptr == NULL) {
+                                    while(1);
+                                }
                                 if (redirection_i == 0) {
                                     InsertList(&new_cmd->argv, temp_ptr);
                                 } else {
@@ -145,17 +146,25 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
                                 }
                             }
                         }
+                        redirection_i++;
                     }
-                    redirection_i++;
                 }
 
                 /* Check if redirect is > 1. If so, then deallocate everything and return NULL */
+                if ((redirection_i <= 1) || new_cmd->redirection.count > 1) {
+                    /* Either too many redirects or missing redirect file */
+                    DeleteCommand(new_cmd);
+                    ResetCommandList(cmd_list);
+                   break;
+                }
             } else {
                 /* parse on whitespaces since there is no redirection */
                 while ((whitespace_sep_ptr = strsep(&parallel_sep_ptr, " \t")) != NULL) {
                     if (*whitespace_sep_ptr != '\0') {
                         char *temp_ptr = strdup(whitespace_sep_ptr);
-                        assert(temp_ptr);
+                        if (temp_ptr == NULL) {
+                            while(1);
+                        }
                         InsertList(&new_cmd->argv, temp_ptr);
                     }
                 }
@@ -163,8 +172,6 @@ static void ParseCommandList(linkedlist *cmd_list, char *line) {
             InsertList(cmd_list, new_cmd);
         }
     }
-
-    free(line_copy);
 }
 
 static void DeleteCommand(command *cmd) {
@@ -263,7 +270,9 @@ static void Run(int mode, char *file_path) {
     /* Initialize the path list */
     InitList(&path);
     char *initial_path = strdup("/bin");
-    assert(initial_path);
+    if (initial_path == NULL) {
+        while(1);
+    }
     InsertList(&path, initial_path);
 
     while(1) {
@@ -272,8 +281,9 @@ static void Run(int mode, char *file_path) {
         }
         line = NULL;
         if ((nread = getline(&line, &len, fp)) != -1) {
+            InitList(&cmds);
             ParseCommandList(&cmds, line);
-
+            free(line);
             command *current_cmd = PopList(&cmds);
             if (current_cmd != NULL) {
                 char *first_arg = PopList(&current_cmd->argv);
@@ -286,7 +296,6 @@ static void Run(int mode, char *file_path) {
                             DeleteCommand(current_cmd);
                             ResetCommandList(&cmds);
                             free(first_arg);
-                            free(line);
                             ResetPath(&path);
                             exit(0);
                         }
@@ -314,7 +323,9 @@ static void Run(int mode, char *file_path) {
                             char *curr_loc;
                             while((curr_loc = PopList(&current_cmd->argv)) != NULL){
                                 char *temp_ptr = strdup(curr_loc);
-                                assert(temp_ptr);
+                                if (temp_ptr == NULL) {
+                                    while(1);
+                                }
                                 InsertList(&path, temp_ptr);
                                 free(curr_loc);
                             }
@@ -332,8 +343,7 @@ static void Run(int mode, char *file_path) {
                                 char *temp_path_str = (char *) malloc(temp_path_str_len + 1);
                                 sprintf(temp_path_str, "%s/%s", (char *) current_path_node->data, first_arg);
                                 if (access(temp_path_str, X_OK) == 0) {
-                                    cmd_path = current_path_node->data;
-                                    free(temp_path_str);
+                                    cmd_path = temp_path_str;
                                     break;
                                 }
                                 free(temp_path_str);
@@ -365,8 +375,8 @@ static void Run(int mode, char *file_path) {
                                         close(STDOUT_FILENO);
                                         open(redirect_file, O_CREAT|O_WRONLY|O_TRUNC, S_IRWXU);                                 
                                     }
-                                    chdir(cmd_path);
-                                    execv(my_args[0], my_args);
+
+                                    execv(cmd_path, my_args);
                                     _exit(0);
                                 } else {
                                     /* Parent enters here */
@@ -375,6 +385,7 @@ static void Run(int mode, char *file_path) {
                                         free(my_args[i]);
                                     }
                                     free(my_args);
+                                    free(cmd_path);
 
                                     if (redirect_file != NULL) {
                                         free(redirect_file);

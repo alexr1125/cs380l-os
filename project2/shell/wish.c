@@ -317,20 +317,16 @@ static void Run(int mode, char *file_path) {
                         free(first_arg);
                         DeleteCommand(current_cmd);
                     } else if(strcmp(first_arg, "path") == 0) {
-                        if (current_cmd->argv.count == 0) {
-                            /* Reset path */
-                            ResetPath(&path);
-                        } else {
-                            /* Iterate through all the arguments and add to path */
-                            char *curr_loc;
-                            while((curr_loc = PopList(&current_cmd->argv)) != NULL){
-                                char *temp_ptr = strdup(curr_loc);
-                                if (temp_ptr == NULL) {
-                                    while(1);
-                                }
-                                InsertList(&path, temp_ptr);
-                                free(curr_loc);
+                        /* Clear path then iterate through all the arguments and add to path */
+                        ResetPath(&path);
+                        char *curr_loc;
+                        while((curr_loc = PopList(&current_cmd->argv)) != NULL){
+                            char *temp_ptr = strdup(curr_loc);
+                            if (temp_ptr == NULL) {
+                                while(1);
                             }
+                            InsertList(&path, temp_ptr);
+                            free(curr_loc);
                         }
                         free(first_arg);
                         DeleteCommand(current_cmd);

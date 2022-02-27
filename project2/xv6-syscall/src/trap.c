@@ -13,6 +13,8 @@ struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
 struct spinlock tickslock;
 uint ticks;
+struct spinlock readcountlock;
+uint readcount;
 
 void
 tvinit(void)
@@ -24,6 +26,8 @@ tvinit(void)
   SETGATE(idt[T_SYSCALL], 1, SEG_KCODE<<3, vectors[T_SYSCALL], DPL_USER);
 
   initlock(&tickslock, "time");
+  initlock(&readcountlock, "read count");
+  readcount = 0;  // TODO: is this the best place to init this?
 }
 
 void

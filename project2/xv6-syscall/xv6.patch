@@ -1,0 +1,129 @@
+diff -ruN src/defs.h src-finished/defs.h
+--- src/defs.h	2019-09-08 06:42:06.000000000 -0500
++++ src-finished/defs.h	2022-02-26 22:59:08.000000000 -0600
+@@ -164,6 +164,8 @@
+ extern uint     ticks;
+ void            tvinit(void);
+ extern struct spinlock tickslock;
++extern uint readcount;
++extern struct spinlock readcountlock;
+ 
+ // uart.c
+ void            uartinit(void);
+diff -ruN src/kernel.ld src-finished/kernel.ld
+--- src/kernel.ld	2019-09-08 06:42:06.000000000 -0500
++++ src-finished/kernel.ld	2022-02-26 22:59:08.000000000 -0600
+@@ -26,16 +26,12 @@
+ 		PROVIDE(__STAB_BEGIN__ = .);
+ 		*(.stab);
+ 		PROVIDE(__STAB_END__ = .);
+-		BYTE(0)		/* Force the linker to allocate space
+-				   for this section */
+ 	}
+ 
+ 	.stabstr : {
+ 		PROVIDE(__STABSTR_BEGIN__ = .);
+ 		*(.stabstr);
+ 		PROVIDE(__STABSTR_END__ = .);
+-		BYTE(0)		/* Force the linker to allocate space
+-				   for this section */
+ 	}
+ 
+ 	/* Adjust the address for the data segment to the next page */
+diff -ruN src/syscall.c src-finished/syscall.c
+--- src/syscall.c	2019-09-22 20:45:24.000000000 -0500
++++ src-finished/syscall.c	2022-02-26 22:59:08.000000000 -0600
+@@ -103,6 +103,7 @@
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_getreadcount(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +127,7 @@
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_getreadcount] sys_getreadcount,
+ };
+ 
+ void
+diff -ruN src/syscall.h src-finished/syscall.h
+--- src/syscall.h	2019-09-08 06:42:06.000000000 -0500
++++ src-finished/syscall.h	2022-02-26 22:59:08.000000000 -0600
+@@ -20,3 +20,4 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_getreadcount 22
+diff -ruN src/sysfile.c src-finished/sysfile.c
+--- src/sysfile.c	2019-09-22 20:45:24.000000000 -0500
++++ src-finished/sysfile.c	2022-02-26 22:59:08.000000000 -0600
+@@ -73,12 +73,26 @@
+   int n;
+   char *p;
+ 
++  acquire(&readcountlock);
++  readcount++;
++  release(&readcountlock);
++
+   if(argfd(0, 0, &f) < 0 || argint(2, &n) < 0 || argptr(1, &p, n) < 0)
+     return -1;
+   return fileread(f, p, n);
+ }
+ 
+ int
++sys_getreadcount(void)
++{
++  uint cnt = 0;
++  acquire(&readcountlock);
++  cnt = readcount;
++  release(&readcountlock);
++  return cnt;
++}
++
++int
+ sys_write(void)
+ {
+   struct file *f;
+diff -ruN src/trap.c src-finished/trap.c
+--- src/trap.c	2019-09-08 06:42:06.000000000 -0500
++++ src-finished/trap.c	2022-02-26 22:59:08.000000000 -0600
+@@ -13,6 +13,8 @@
+ extern uint vectors[];  // in vectors.S: array of 256 entry pointers
+ struct spinlock tickslock;
+ uint ticks;
++struct spinlock readcountlock;
++uint readcount;
+ 
+ void
+ tvinit(void)
+@@ -24,6 +26,8 @@
+   SETGATE(idt[T_SYSCALL], 1, SEG_KCODE<<3, vectors[T_SYSCALL], DPL_USER);
+ 
+   initlock(&tickslock, "time");
++  initlock(&readcountlock, "read count");
++  readcount = 0;  // TODO: is this the best place to init this?
+ }
+ 
+ void
+diff -ruN src/user.h src-finished/user.h
+--- src/user.h	2019-09-08 06:42:06.000000000 -0500
++++ src-finished/user.h	2022-02-26 22:59:08.000000000 -0600
+@@ -8,6 +8,7 @@
+ int pipe(int*);
+ int write(int, const void*, int);
+ int read(int, void*, int);
++int getreadcount(void);
+ int close(int);
+ int kill(int);
+ int exec(char*, char**);
+diff -ruN src/usys.S src-finished/usys.S
+--- src/usys.S	2019-09-08 06:42:06.000000000 -0500
++++ src-finished/usys.S	2022-02-26 22:59:08.000000000 -0600
+@@ -29,3 +29,4 @@
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(getreadcount)

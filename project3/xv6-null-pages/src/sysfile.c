@@ -445,9 +445,53 @@ sys_pipe(void)
 }
 
 int sys_mprotect(void) {
+  char *addr;
+  int len;
+
+  if(argint(1, &len) < 0) {
+    return -1;
+  }
+  if((len <= 0) || argptr(0, &addr, len*PGSIZE) < 0) {
+    return -1;
+  }
+
+  /* Check if page aligned */
+  if (((uint)addr & (PGSIZE-1)) != 0) {
+    return -1;
+  }
+
+  struct proc *curproc = myproc();
+  while (len > 0) {
+    changeptew(curproc->pgdir, addr, 1);
+    addr += PGSIZE;
+    len -= 1;
+  }
+  
   return 0;
 }
 
 int sys_munprotect(void) {
+  char *addr;
+  int len;
+
+  if(argint(1, &len) < 0) {
+    return -1;
+  }
+  if((len <= 0) || argptr(0, &addr, len*PGSIZE) < 0) {
+    return -1;
+  }
+
+  /* Check if page aligned */
+  if (((uint)addr & (PGSIZE-1)) != 0) {
+    return -1;
+  }
+
+  struct proc *curproc = myproc();
+  while (len > 0) {
+    changeptew(curproc->pgdir, addr, 0);
+    addr += PGSIZE;
+    len -= 1;
+  }
+  
   return 0;
 }

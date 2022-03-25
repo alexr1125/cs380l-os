@@ -310,6 +310,24 @@ clearpteu(pde_t *pgdir, char *uva)
   *pte &= ~PTE_U;
 }
 
+void
+changeptew(pde_t *pgdir, char *uva, uint set)
+{
+  pte_t *pte;
+
+  pte = walkpgdir(pgdir, uva, 0);
+  if (pte == 0) {
+    panic("changeptew");
+  }
+  if (set) {
+    *pte |= PTE_W;
+  } else {
+    *pte &= ~PTE_W;
+  }
+
+  lcr3(V2P(pgdir));
+}
+
 // Given a parent process's page table, create a copy
 // of it for a child.
 pde_t*

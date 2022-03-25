@@ -311,20 +311,30 @@ clearpteu(pde_t *pgdir, char *uva)
 }
 
 void
-changeptew(pde_t *pgdir, char *uva, uint set)
+setptew(pde_t *pgdir, char *uva)
 {
   pte_t *pte;
 
   pte = walkpgdir(pgdir, uva, 0);
   if (pte == 0) {
-    panic("changeptew");
-  }
-  if (set) {
-    *pte |= PTE_W;
-  } else {
-    *pte &= ~PTE_W;
+    panic("setptew");
   }
 
+  *pte |= PTE_W;
+  lcr3(V2P(pgdir));
+}
+
+void
+clearptew(pde_t *pgdir, char *uva)
+{
+  pte_t *pte;
+
+  pte = walkpgdir(pgdir, uva, 0);
+  if (pte == 0) {
+    panic("clearptew");
+  }
+
+  *pte &= ~PTE_W;
   lcr3(V2P(pgdir));
 }
 

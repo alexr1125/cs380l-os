@@ -462,7 +462,7 @@ int sys_mprotect(void) {
 
   struct proc *curproc = myproc();
   while (len > 0) {
-    changeptew(curproc->pgdir, addr, 1);
+    clearptew(curproc->pgdir, addr);
     addr += PGSIZE;
     len -= 1;
   }
@@ -488,7 +488,7 @@ int sys_munprotect(void) {
 
   struct proc *curproc = myproc();
   while (len > 0) {
-    changeptew(curproc->pgdir, addr, 0);
+    setptew(curproc->pgdir, addr);
     addr += PGSIZE;
     len -= 1;
   }

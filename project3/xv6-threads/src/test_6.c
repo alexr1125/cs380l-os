@@ -20,6 +20,8 @@ void threadfunc(void *arg1, void *arg2)
 /*testing clone() and join() system call with a simple thread function.*/
 int main(int argc, char *argv[])
 {
+  lock_init(&mylock);
+
   int i = 0;
   printf(1, "XV6_TEST_OUTPUT : i before threadfunc = %x\n", i);
 

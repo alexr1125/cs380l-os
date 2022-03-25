@@ -21,7 +21,6 @@ void threadfunc(void *arg1, void *arg2)
 int main(int argc, char *argv[])
 {
   int i = 0;
-  lock_init(&mylock);
   printf(1, "XV6_TEST_OUTPUT : i before threadfunc = %x\n", i);
 
   void *stack = sbrk(4096);

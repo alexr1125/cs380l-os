@@ -38,8 +38,13 @@ exec(char *path, char **argv)
   if((pgdir = setupkvm()) == 0)
     goto bad;
 
+  if((sz = allocuvm(pgdir, 0, PGSIZE)) == 0) {
+    goto bad;
+  }
+  clearpteu(pgdir, 0);
+  
   // Load program into memory.
-  sz = 0;
+  sz = 0x1000;
   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
     if(readi(ip, (char*)&ph, off, sizeof(ph)) != sizeof(ph))
       goto bad;

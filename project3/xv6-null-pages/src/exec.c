@@ -38,6 +38,11 @@ exec(char *path, char **argv)
   if((pgdir = setupkvm()) == 0)
     goto bad;
 
+  /*
+    Handle NULL pointers by allocating an empty page
+    starting at 0x0 and clearing the PTE_U bit to cause
+    an error when accessing it.
+   */
   if((sz = allocuvm(pgdir, 0, PGSIZE)) == 0) {
     goto bad;
   }

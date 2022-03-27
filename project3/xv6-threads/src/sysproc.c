@@ -91,9 +91,22 @@ sys_uptime(void)
 }
 
 int sys_clone(void) {
-  return 0;
+  /* Get all the arguments and check if valid */
+  int fcn, arg1, arg2, stack;
+  if ((argint(0, &fcn) < 0)  || (argint(1, &arg1) < 0) ||
+      (argint(2, &arg2) < 0) || (argint(3, &stack) < 0)) {
+    return -1;
+  }
+
+  return clone((void *) fcn, (void *) arg1, (void *) arg2, (void *) stack);
 }
 
 int sys_join(void) {
-  return 0;
+  /* Get all the arguments and check if valid */
+  int stack;
+  if (argint(0, &stack) < 0) {
+    return -1;
+  }
+
+  return join((void**)stack);
 }

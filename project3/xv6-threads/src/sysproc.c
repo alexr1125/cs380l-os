@@ -93,8 +93,8 @@ sys_uptime(void)
 int sys_clone(void) {
   /* Get all the arguments and check if valid */
   int fcn, arg1, arg2, stack;
-  if ((argint(0, &fcn) < 0)  || (argint(1, &arg1) < 0) ||
-      (argint(2, &arg2) < 0) || (argint(3, &stack) < 0)) {
+  if ((argptr(0, (char **) &fcn, 1) < 0)  || (argint(1, &arg1) < 0) ||
+      (argint(2, &arg2) < 0) || (argptr(3, (char **) &stack, 1) < 0)) {
     return -1;
   }
 

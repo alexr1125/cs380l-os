@@ -234,16 +234,37 @@ int clone(void(*fcn)(void*, void *), void *arg1, void *arg2, void *stack) {
     return -1;
   }
 
-  // Copy process state from proc.
-  if((np->pgdir = copyuvm(curproc->pgdir, curproc->sz)) == 0){
-    kfree(np->kstack);
-    np->kstack = 0;
-    np->state = UNUSED;
-    return -1;
-  }
+  /* Thread shares address space with parent. Also save stack pointer */
+  np->pgdir = curproc->pgdir;
   np->sz = curproc->sz;
   np->parent = curproc;
   *np->tf = *curproc->tf;
+  np->tstack = stack;
+
+  /* Set intstruction pointer to the function thread should run */
+  np->tf->eip = (uint) fcn;
+
+  /* Set up the thread stack with the arguements and fake return value.
+    Parameter #N
+    ...
+    Parameter 2
+    Parameter 1
+    Return Address
+    Old %ebp
+    Local Variable 1 <--- -4(%ebp)
+    Local Variable 2 <--- -8(%ebp) and (%esp)
+ */
+  void *top_stack_ptr = (void *) stack + PGSIZE;
+  top_stack_ptr -= sizeof(void *);
+  *(uint*)top_stack_ptr = (uint)arg2;
+  top_stack_ptr -= sizeof(void *);
+  *(uint*)top_stack_ptr = (uint)arg1;
+  top_stack_ptr -= sizeof(void *);
+  *(uint*)top_stack_ptr = 0xFFFFFFF;
+  
+  /* Point stack pointer to thread stack */
+  np->tf->esp = (uint) top_stack_ptr;
+  np->tf->ebp = np->tf->esp;
 
   // Clear %eax so that fork returns 0 in the child.
   np->tf->eax = 0;
@@ -267,7 +288,46 @@ int clone(void(*fcn)(void*, void *), void *arg1, void *arg2, void *stack) {
 }
 
 int join(void **stack) {
-  return 0;
+  struct proc *p;
+  int havekids, pid;
+  struct proc *curproc = myproc();
+  
+  acquire(&ptable.lock);
+  for (;;) {
+    // Scan through table looking for exited children.
+    havekids = 0;
+    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+      /* Check if child thread */
+      if (p->parent != curproc || p->parent->pgdir != p->pgdir) {
+        continue;
+      }
+      havekids = 1;
+      if (p->state == ZOMBIE) {
+        // Found one.
+        pid = p->pid;
+        kfree(p->kstack);
+        p->kstack = 0;
+        p->pid = 0;
+        p->parent = 0;
+        p->name[0] = 0;
+        p->killed = 0;
+        p->state = UNUSED;
+        *stack = p->tstack;
+        p->tstack = 0;
+        release(&ptable.lock);
+        return pid;
+      }
+    }
+
+    // No point waiting if we don't have any children.
+    if (!havekids || curproc->killed) {
+      release(&ptable.lock);
+      return -1;
+    }
+
+    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
+    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
+  }
 }
 
 // Exit the current process.  Does not return.

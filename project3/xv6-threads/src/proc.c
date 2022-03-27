@@ -160,17 +160,30 @@ growproc(int n)
 {
   uint sz;
   struct proc *curproc = myproc();
-
+  acquire(&ptable.lock);
   sz = curproc->sz;
   if(n > 0){
-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0) {
+      release(&ptable.lock);
       return -1;
+    }
   } else if(n < 0){
-    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
+    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0) {
+      release(&ptable.lock);
       return -1;
+    }
   }
   curproc->sz = sz;
+
+  /* Update size of child threads */
+  for(struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+    if(p->parent == curproc && p->parent->pgdir == p->pgdir){
+      p->sz = sz;
+    }
+  }
+  
   switchuvm(curproc);
+  release(&ptable.lock);
   return 0;
 }
 

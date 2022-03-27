@@ -2,7 +2,8 @@ struct stat;
 struct rtcdate;
 
 typedef struct {
-    int lock;
+    int ticket;
+    int turn;
 } lock_t;
 
 // system calls

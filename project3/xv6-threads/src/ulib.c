@@ -114,13 +114,15 @@ int thread_join() {
 }
 
 void lock_init(lock_t *lock) {
-
+  lock->ticket = 0;
+  lock->turn = 0;
 }
 
 void lock_acquire(lock_t *lock) {
-
+  int my_turn = fetch_and_add(&lock->ticket, 1);
+  while (lock->turn != my_turn);
 }
 
 void lock_release(lock_t *lock) {
-
+  lock->turn = lock->turn + 1;
 }

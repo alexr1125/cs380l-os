@@ -40,6 +40,7 @@ struct proc {
   pde_t* pgdir;                // Page table
   char *kstack;                // Bottom of kernel stack for this process
   char *tstack;                // Bottom of thread stack. Need this to be able to free it later on
+  uint thread_cnt;
   enum procstate state;        // Process state
   int pid;                     // Process ID
   struct proc *parent;         // Parent process

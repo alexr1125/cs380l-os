@@ -112,6 +112,9 @@ found:
   memset(p->context, 0, sizeof *p->context);
   p->context->eip = (uint)forkret;
 
+  /* Init the thread count */
+  p->thread_cnt = 0;
+
   return p;
 }
 
@@ -251,6 +254,7 @@ int clone(void(*fcn)(void*, void *), void *arg1, void *arg2, void *stack) {
   np->pgdir = curproc->pgdir;
   np->sz = curproc->sz;
   np->parent = curproc;
+  np->parent->thread_cnt++;
   *np->tf = *curproc->tf;
   np->tstack = stack;
 
@@ -321,6 +325,7 @@ int join(void **stack) {
         kfree(p->kstack);
         p->kstack = 0;
         p->pid = 0;
+        p->parent->thread_cnt--;
         p->parent = 0;
         p->name[0] = 0;
         p->killed = 0;
@@ -406,7 +411,8 @@ wait(void)
       if(p->parent != curproc || p->parent->pgdir == p->pgdir)
         continue;
       havekids = 1;
-      if(p->state == ZOMBIE){
+      /* Only free up the address space if there are no child threads running */
+      if(p->state == ZOMBIE && p->thread_cnt == 0){
         // Found one.
         pid = p->pid;
         kfree(p->kstack);

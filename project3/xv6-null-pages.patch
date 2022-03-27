@@ -1,0 +1,229 @@
+diff -ruN src/defs.h src-finished/defs.h
+--- src/defs.h	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/defs.h	2022-03-27 18:42:54.828064750 +0000
+@@ -185,6 +185,8 @@
+ void            switchkvm(void);
+ int             copyout(pde_t*, uint, void*, uint);
+ void            clearpteu(pde_t *pgdir, char *uva);
++void            setptew(pde_t *pgdir, char *uva);
++void            clearptew(pde_t *pgdir, char *uva);
+ 
+ // number of elements in fixed-size array
+ #define NELEM(x) (sizeof(x)/sizeof((x)[0]))
+diff -ruN src/exec.c src-finished/exec.c
+--- src/exec.c	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/exec.c	2022-03-27 18:42:54.828064750 +0000
+@@ -38,8 +38,18 @@
+   if((pgdir = setupkvm()) == 0)
+     goto bad;
+ 
++  /*
++    Handle NULL pointers by allocating an empty page
++    starting at 0x0 and clearing the PTE_U bit to cause
++    an error when accessing it.
++   */
++  if((sz = allocuvm(pgdir, 0, PGSIZE)) == 0) {
++    goto bad;
++  }
++  clearpteu(pgdir, 0);
++
+   // Load program into memory.
+-  sz = 0;
++  sz = PGSIZE;
+   for(i=0, off=elf.phoff; i<elf.phnum; i++, off+=sizeof(ph)){
+     if(readi(ip, (char*)&ph, off, sizeof(ph)) != sizeof(ph))
+       goto bad;
+diff -ruN src/Makefile src-finished/Makefile
+--- src/Makefile	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/Makefile	2022-03-27 18:42:54.828064750 +0000
+@@ -146,7 +146,7 @@
+ ULIB = ulib.o usys.o printf.o umalloc.o
+ 
+ _%: %.o $(ULIB)
+-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
++	$(LD) $(LDFLAGS) -N -e main -Ttext 0x1000 -o $@ $^
+ 	$(OBJDUMP) -S $@ > $*.asm
+ 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+ 
+diff -ruN src/Makefile.test src-finished/Makefile.test
+--- src/Makefile.test	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/Makefile.test	2022-03-27 18:42:54.828064750 +0000
+@@ -76,7 +76,7 @@
+ LD = $(TOOLPREFIX)ld
+ OBJCOPY = $(TOOLPREFIX)objcopy
+ OBJDUMP = $(TOOLPREFIX)objdump
+-CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
++CFLAGS = -fno-pic -static -fno-builtin -fno-strict-aliasing -O2 -fno-delete-null-pointer-checks -Wall -MD -ggdb -m32 -Werror -fno-omit-frame-pointer
+ CFLAGS += $(shell $(CC) -fno-stack-protector -E -x c /dev/null >/dev/null 2>&1 && echo -fno-stack-protector)
+ ASFLAGS = -m32 -gdwarf-2 -Wa,-divide
+ # FreeBSD ld wants ``elf_i386_fbsd''
+@@ -146,7 +146,7 @@
+ ULIB = ulib.o usys.o printf.o umalloc.o
+ 
+ _%: %.o $(ULIB)
+-	$(LD) $(LDFLAGS) -N -e main -Ttext 0 -o $@ $^
++	$(LD) $(LDFLAGS) -N -e main -Ttext 0x1000 -o $@ $^
+ 	$(OBJDUMP) -S $@ > $*.asm
+ 	$(OBJDUMP) -t $@ | sed '1,/SYMBOL TABLE/d; s/ .* / /; /^$$/d' > $*.sym
+ 
+diff -ruN src/syscall.c src-finished/syscall.c
+--- src/syscall.c	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/syscall.c	2022-03-27 18:42:54.828064750 +0000
+@@ -103,6 +103,8 @@
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_mprotect(void);
++extern int sys_munprotect(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +128,8 @@
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_mprotect]   sys_mprotect,
++[SYS_munprotect]   sys_munprotect,
+ };
+ 
+ void
+diff -ruN src/syscall.h src-finished/syscall.h
+--- src/syscall.h	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/syscall.h	2022-03-27 18:42:54.828064750 +0000
+@@ -20,3 +20,5 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_mprotect 22
++#define SYS_munprotect 23
+\ No newline at end of file
+diff -ruN src/sysfile.c src-finished/sysfile.c
+--- src/sysfile.c	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/sysfile.c	2022-03-27 18:42:54.828064750 +0000
+@@ -443,3 +443,55 @@
+   fd[1] = fd1;
+   return 0;
+ }
++
++int sys_mprotect(void) {
++  char *addr;
++  int len;
++
++  if(argint(1, &len) < 0) {
++    return -1;
++  }
++  if((len <= 0) || argptr(0, &addr, len*PGSIZE) < 0) {
++    return -1;
++  }
++
++  /* Check if page aligned */
++  if (((uint)addr & (PGSIZE-1)) != 0) {
++    return -1;
++  }
++
++  struct proc *curproc = myproc();
++  while (len > 0) {
++    clearptew(curproc->pgdir, addr);
++    addr += PGSIZE;
++    len -= 1;
++  }
++  
++  return 0;
++}
++
++int sys_munprotect(void) {
++  char *addr;
++  int len;
++
++  if(argint(1, &len) < 0) {
++    return -1;
++  }
++  if((len <= 0) || argptr(0, &addr, len*PGSIZE) < 0) {
++    return -1;
++  }
++
++  /* Check if page aligned */
++  if (((uint)addr & (PGSIZE-1)) != 0) {
++    return -1;
++  }
++
++  struct proc *curproc = myproc();
++  while (len > 0) {
++    setptew(curproc->pgdir, addr);
++    addr += PGSIZE;
++    len -= 1;
++  }
++  
++  return 0;
++}
+\ No newline at end of file
+diff -ruN src/test_2.c src-finished/test_2.c
+--- src/test_2.c	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/test_2.c	2022-03-27 18:42:54.832064795 +0000
+@@ -4,6 +4,7 @@
+ int
+ main(int argc, char *argv[])
+ {
++    printf(1, "XV6_TEST_OUTPUT: this should print\n");
+     volatile char *p = (char *)0;
+ 
+     *p; //page fault trap 14 should occur here
+diff -ruN src/user.h src-finished/user.h
+--- src/user.h	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/user.h	2022-03-27 18:42:54.832064795 +0000
+@@ -23,6 +23,8 @@
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int mprotect(void *addr, int len);
++int munprotect(void *addr, int len);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+diff -ruN src/usys.S src-finished/usys.S
+--- src/usys.S	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/usys.S	2022-03-27 18:42:54.832064795 +0000
+@@ -29,3 +29,5 @@
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(mprotect)
++SYSCALL(munprotect)
+diff -ruN src/vm.c src-finished/vm.c
+--- src/vm.c	2022-03-27 18:42:33.011822947 +0000
++++ src-finished/vm.c	2022-03-27 18:42:54.832064795 +0000
+@@ -310,6 +310,34 @@
+   *pte &= ~PTE_U;
+ }
+ 
++void
++setptew(pde_t *pgdir, char *uva)
++{
++  pte_t *pte;
++
++  pte = walkpgdir(pgdir, uva, 0);
++  if (pte == 0) {
++    panic("setptew");
++  }
++
++  *pte |= PTE_W;
++  lcr3(V2P(pgdir));
++}
++
++void
++clearptew(pde_t *pgdir, char *uva)
++{
++  pte_t *pte;
++
++  pte = walkpgdir(pgdir, uva, 0);
++  if (pte == 0) {
++    panic("clearptew");
++  }
++
++  *pte &= ~PTE_W;
++  lcr3(V2P(pgdir));
++}
++
+ // Given a parent process's page table, create a copy
+ // of it for a child.
+ pde_t*

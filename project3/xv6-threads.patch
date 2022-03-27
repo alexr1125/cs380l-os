@@ -1,0 +1,382 @@
+diff -ruN src/defs.h src-finished/defs.h
+--- src/defs.h	2022-03-27 18:45:04.221454287 +0000
++++ src-finished/defs.h	2022-03-27 18:45:31.893742628 +0000
+@@ -120,6 +120,8 @@
+ int             wait(void);
+ void            wakeup(void*);
+ void            yield(void);
++int             clone(void(*fcn)(void*, void *), void *arg1, void *arg2, void *stack);
++int             join(void **stack);
+ 
+ // swtch.S
+ void            swtch(struct context**, struct context*);
+diff -ruN src/proc.c src-finished/proc.c
+--- src/proc.c	2022-03-27 18:45:04.241454497 +0000
++++ src-finished/proc.c	2022-03-27 18:45:31.897742670 +0000
+@@ -112,6 +112,9 @@
+   memset(p->context, 0, sizeof *p->context);
+   p->context->eip = (uint)forkret;
+ 
++  /* Init the thread count */
++  p->thread_cnt = 0;
++
+   return p;
+ }
+ 
+@@ -160,17 +163,30 @@
+ {
+   uint sz;
+   struct proc *curproc = myproc();
+-
++  acquire(&ptable.lock);
+   sz = curproc->sz;
+   if(n > 0){
+-    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0)
++    if((sz = allocuvm(curproc->pgdir, sz, sz + n)) == 0) {
++      release(&ptable.lock);
+       return -1;
++    }
+   } else if(n < 0){
+-    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0)
++    if((sz = deallocuvm(curproc->pgdir, sz, sz + n)) == 0) {
++      release(&ptable.lock);
+       return -1;
++    }
+   }
+   curproc->sz = sz;
++
++  /* Update size of child threads */
++  for(struct proc *p = ptable.proc; p < &ptable.proc[NPROC]; p++){
++    if(p->parent == curproc && p->parent->pgdir == p->pgdir){
++      p->sz = sz;
++    }
++  }
++  
+   switchuvm(curproc);
++  release(&ptable.lock);
+   return 0;
+ }
+ 
+@@ -221,6 +237,117 @@
+   return pid;
+ }
+ 
++// Create a new process copying p as the parent.
++// Sets up stack to return as if from system call.
++// Caller must set state of returned proc to RUNNABLE.
++int clone(void(*fcn)(void*, void *), void *arg1, void *arg2, void *stack) {
++  int i, pid;
++  struct proc *np;
++  struct proc *curproc = myproc();
++
++  // Allocate process.
++  if((np = allocproc()) == 0){
++    return -1;
++  }
++
++  /* Thread shares address space with parent. Also save stack pointer */
++  np->pgdir = curproc->pgdir;
++  np->sz = curproc->sz;
++  np->parent = curproc;
++  np->parent->thread_cnt++;
++  *np->tf = *curproc->tf;
++  np->tstack = stack;
++
++  /* Set intstruction pointer to the function thread should run */
++  np->tf->eip = (uint) fcn;
++
++  /* Set up the thread stack with the arguements and fake return value.
++    Parameter #N
++    ...
++    Parameter 2
++    Parameter 1
++    Return Address
++    Old %ebp
++    Local Variable 1 <--- -4(%ebp)
++    Local Variable 2 <--- -8(%ebp) and (%esp)
++ */
++  void *top_stack_ptr = (void *) stack + PGSIZE;
++  top_stack_ptr -= sizeof(void *);
++  *(uint*)top_stack_ptr = (uint)arg2;
++  top_stack_ptr -= sizeof(void *);
++  *(uint*)top_stack_ptr = (uint)arg1;
++  top_stack_ptr -= sizeof(void *);
++  *(uint*)top_stack_ptr = 0xFFFFFFF;
++  
++  /* Point stack pointer to thread stack */
++  np->tf->esp = (uint) top_stack_ptr;
++  np->tf->ebp = np->tf->esp;
++
++  // Clear %eax so that fork returns 0 in the child.
++  np->tf->eax = 0;
++
++  for(i = 0; i < NOFILE; i++)
++    if(curproc->ofile[i])
++      np->ofile[i] = filedup(curproc->ofile[i]);
++  np->cwd = idup(curproc->cwd);
++
++  safestrcpy(np->name, curproc->name, sizeof(curproc->name));
++
++  pid = np->pid;
++
++  acquire(&ptable.lock);
++
++  np->state = RUNNABLE;
++
++  release(&ptable.lock);
++
++  return pid;
++}
++
++int join(void **stack) {
++  struct proc *p;
++  int havekids, pid;
++  struct proc *curproc = myproc();
++  
++  acquire(&ptable.lock);
++  for (;;) {
++    // Scan through table looking for exited children.
++    havekids = 0;
++    for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
++      /* Check if child thread */
++      if (p->parent != curproc || p->parent->pgdir != p->pgdir) {
++        continue;
++      }
++      havekids = 1;
++      if (p->state == ZOMBIE) {
++        // Found one.
++        pid = p->pid;
++        kfree(p->kstack);
++        p->kstack = 0;
++        p->pid = 0;
++        p->parent->thread_cnt--;
++        p->parent = 0;
++        p->name[0] = 0;
++        p->killed = 0;
++        p->state = UNUSED;
++        *stack = p->tstack;
++        p->tstack = 0;
++        release(&ptable.lock);
++        return pid;
++      }
++    }
++
++    // No point waiting if we don't have any children.
++    if (!havekids || curproc->killed) {
++      release(&ptable.lock);
++      return -1;
++    }
++
++    // Wait for children to exit.  (See wakeup1 call in proc_exit.)
++    sleep(curproc, &ptable.lock);  //DOC: wait-sleep
++  }
++}
++
+ // Exit the current process.  Does not return.
+ // An exited process remains in the zombie state
+ // until its parent calls wait() to find out it exited.
+@@ -281,10 +408,11 @@
+     // Scan through table looking for exited children.
+     havekids = 0;
+     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
+-      if(p->parent != curproc)
++      if(p->parent != curproc || p->parent->pgdir == p->pgdir)
+         continue;
+       havekids = 1;
+-      if(p->state == ZOMBIE){
++      /* Only free up the address space if there are no child threads running */
++      if(p->state == ZOMBIE && p->thread_cnt == 0){
+         // Found one.
+         pid = p->pid;
+         kfree(p->kstack);
+diff -ruN src/proc.h src-finished/proc.h
+--- src/proc.h	2022-03-27 18:45:04.225454329 +0000
++++ src-finished/proc.h	2022-03-27 18:45:31.897742670 +0000
+@@ -39,6 +39,8 @@
+   uint sz;                     // Size of process memory (bytes)
+   pde_t* pgdir;                // Page table
+   char *kstack;                // Bottom of kernel stack for this process
++  char *tstack;                // Bottom of thread stack. Need this to be able to free it later on
++  uint thread_cnt;
+   enum procstate state;        // Process state
+   int pid;                     // Process ID
+   struct proc *parent;         // Parent process
+diff -ruN src/syscall.c src-finished/syscall.c
+--- src/syscall.c	2022-03-27 18:45:04.233454413 +0000
++++ src-finished/syscall.c	2022-03-27 18:45:31.897742670 +0000
+@@ -103,6 +103,8 @@
+ extern int sys_wait(void);
+ extern int sys_write(void);
+ extern int sys_uptime(void);
++extern int sys_clone(void);
++extern int sys_join(void);
+ 
+ static int (*syscalls[])(void) = {
+ [SYS_fork]    sys_fork,
+@@ -126,6 +128,8 @@
+ [SYS_link]    sys_link,
+ [SYS_mkdir]   sys_mkdir,
+ [SYS_close]   sys_close,
++[SYS_clone]   sys_clone,
++[SYS_join]    sys_join,
+ };
+ 
+ void
+diff -ruN src/syscall.h src-finished/syscall.h
+--- src/syscall.h	2022-03-27 18:45:04.245454538 +0000
++++ src-finished/syscall.h	2022-03-27 18:45:31.897742670 +0000
+@@ -20,3 +20,5 @@
+ #define SYS_link   19
+ #define SYS_mkdir  20
+ #define SYS_close  21
++#define SYS_clone  22
++#define SYS_join   23
+diff -ruN src/sysproc.c src-finished/sysproc.c
+--- src/sysproc.c	2022-03-27 18:45:04.221454287 +0000
++++ src-finished/sysproc.c	2022-03-27 18:45:31.901742711 +0000
+@@ -89,3 +89,24 @@
+   release(&tickslock);
+   return xticks;
+ }
++
++int sys_clone(void) {
++  /* Get all the arguments and check if valid */
++  int fcn, arg1, arg2, stack;
++  if ((argptr(0, (char **) &fcn, 1) < 0)  || (argint(1, &arg1) < 0) ||
++      (argint(2, &arg2) < 0) || (argptr(3, (char **) &stack, 1) < 0)) {
++    return -1;
++  }
++
++  return clone((void *) fcn, (void *) arg1, (void *) arg2, (void *) stack);
++}
++
++int sys_join(void) {
++  /* Get all the arguments and check if valid */
++  int stack;
++  if (argint(0, &stack) < 0) {
++    return -1;
++  }
++
++  return join((void**)stack);
++}
+diff -ruN src/test_6.c src-finished/test_6.c
+--- src/test_6.c	2022-03-27 18:45:04.249454580 +0000
++++ src-finished/test_6.c	2022-03-27 18:45:31.901742711 +0000
+@@ -20,6 +20,8 @@
+ /*testing clone() and join() system call with a simple thread function.*/
+ int main(int argc, char *argv[])
+ {
++  lock_init(&mylock);
++
+   int i = 0;
+   printf(1, "XV6_TEST_OUTPUT : i before threadfunc = %x\n", i);
+ 
+diff -ruN src/ulib.c src-finished/ulib.c
+--- src/ulib.c	2022-03-27 18:45:04.245454538 +0000
++++ src-finished/ulib.c	2022-03-27 18:45:31.901742711 +0000
+@@ -3,6 +3,7 @@
+ #include "fcntl.h"
+ #include "user.h"
+ #include "x86.h"
++#include "mmu.h"
+ 
+ char*
+ strcpy(char *s, const char *t)
+@@ -104,3 +105,32 @@
+     *dst++ = *src++;
+   return vdst;
+ }
++
++int thread_create(void (*start_routine)(void *, void *), void *arg1, void *arg2) {
++  void* stack;
++  stack = malloc(PGSIZE);
++  return clone(start_routine, arg1, arg2, stack);
++}
++
++int thread_join() {
++  void *stack;
++  int pid = join(&stack);
++  if (pid != -1) {
++    free(stack);
++  }
++  return pid;
++}
++
++void lock_init(lock_t *lock) {
++  lock->ticket = 0;
++  lock->turn = 0;
++}
++
++void lock_acquire(lock_t *lock) {
++  int my_turn = fetch_and_add(&lock->ticket, 1);
++  while (lock->turn != my_turn);
++}
++
++void lock_release(lock_t *lock) {
++  lock->turn = lock->turn + 1;
++}
+diff -ruN src/user.h src-finished/user.h
+--- src/user.h	2022-03-27 18:45:04.241454497 +0000
++++ src-finished/user.h	2022-03-27 18:45:31.901742711 +0000
+@@ -1,6 +1,11 @@
+ struct stat;
+ struct rtcdate;
+ 
++typedef struct {
++    int ticket;
++    int turn;
++} lock_t;
++
+ // system calls
+ int fork(void);
+ int exit(void) __attribute__((noreturn));
+@@ -23,6 +28,8 @@
+ char* sbrk(int);
+ int sleep(int);
+ int uptime(void);
++int clone(void(*fcn)(void*, void *), void *arg1, void *arg2, void *stack);
++int join(void **stack);
+ 
+ // ulib.c
+ int stat(const char*, struct stat*);
+@@ -37,3 +44,9 @@
+ void* malloc(uint);
+ void free(void*);
+ int atoi(const char*);
++int thread_create(void (*start_routine)(void *, void *), void *arg1, void *arg2);
++int thread_join();
++void lock_init(lock_t *lock);
++void lock_acquire(lock_t *lock);
++void lock_release(lock_t *lock);
++
+diff -ruN src/usys.S src-finished/usys.S
+--- src/usys.S	2022-03-27 18:45:04.233454413 +0000
++++ src-finished/usys.S	2022-03-27 18:45:31.901742711 +0000
+@@ -29,3 +29,5 @@
+ SYSCALL(sbrk)
+ SYSCALL(sleep)
+ SYSCALL(uptime)
++SYSCALL(clone)
++SYSCALL(join)
+\ No newline at end of file
+diff -ruN src/x86.h src-finished/x86.h
+--- src/x86.h	2022-03-27 18:45:04.233454413 +0000
++++ src-finished/x86.h	2022-03-27 18:45:31.901742711 +0000
+@@ -130,6 +130,17 @@
+   return result;
+ }
+ 
++/* From Wiki */
++static inline int fetch_and_add(int* variable, int value)
++{
++    __asm__ volatile("lock; xaddl %0, %1"
++      : "+r" (value), "+m" (*variable) // input + output
++      : // No input-only
++      : "memory"
++    );
++    return value;
++}
++
+ static inline uint
+ rcr2(void)
+ {

@@ -1,7 +1,8 @@
 #include "types.h"
 #include "stat.h"
-#include "user.h"
 #include "param.h"
+#include "mmu.h"
+#include "defs.h"
 
 // Memory allocator by Kernighan and Ritchie,
 // The C programming Language, 2nd ed.  Section 8.7.
@@ -44,19 +45,19 @@ kmfree(void *ap)
 }
 
 static Header*
-morecore(uint nu)
+kmorecore(uint nu)
 {
-  char *p;
-  Header *hp;
+  // char *p;
+  // Header *hp;
 
-  if(nu < 4096)
-    nu = 4096;
-  p = sbrk(nu * sizeof(Header));
-  if(p == (char*)-1)
-    return 0;
-  hp = (Header*)p;
-  hp->s.size = nu;
-  free((void*)(hp + 1));
+  // if(nu < 4096)
+  //   nu = 4096;
+  // p = sbrk(nu * sizeof(Header));
+  // if(p == (char*)-1)
+  //   return 0;
+  // hp = (Header*)p;
+  // hp->s.size = nu;
+  // free((void*)(hp + 1));
   return freep;
 }
 
@@ -65,6 +66,10 @@ kmalloc(uint nbytes)
 {
   Header *p, *prevp;
   uint nunits;
+
+  if (nbytes > PGSIZE) {
+    panic("kmalloc");
+  }
 
   nunits = (nbytes + sizeof(Header) - 1)/sizeof(Header) + 1;
   if((prevp = freep) == 0){
@@ -84,7 +89,7 @@ kmalloc(uint nbytes)
       return (void*)(p + 1);
     }
     if(p == freep)
-      if((p = morecore(nunits)) == 0)
+      if((p = kmorecore(nunits)) == 0)
         return 0;
   }
 }

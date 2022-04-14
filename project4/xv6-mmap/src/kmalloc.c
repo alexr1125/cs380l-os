@@ -47,17 +47,15 @@ kmfree(void *ap)
 static Header*
 kmorecore(uint nu)
 {
-  // char *p;
-  // Header *hp;
+  char *p;
+  Header *hp;
 
-  // if(nu < 4096)
-  //   nu = 4096;
-  // p = sbrk(nu * sizeof(Header));
-  // if(p == (char*)-1)
-  //   return 0;
-  // hp = (Header*)p;
-  // hp->s.size = nu;
-  // free((void*)(hp + 1));
+  p = kalloc();
+  if(p == (char*)-1)
+    return 0;
+  hp = (Header*)p;
+  hp->s.size = PGSIZE / sizeof(Header);
+  kmfree((void*)(hp + 1));
   return freep;
 }
 
@@ -67,7 +65,7 @@ kmalloc(uint nbytes)
   Header *p, *prevp;
   uint nunits;
 
-  if (nbytes > PGSIZE) {
+  if (nbytes > PGSIZE - sizeof(Header)) {
     panic("kmalloc");
   }
 

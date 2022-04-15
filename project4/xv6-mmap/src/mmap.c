@@ -37,9 +37,11 @@
 typedef struct _mmap_node_ {
     void *addr;    // Starting address
     void *hint_addr;
-    uint len;      // Length of mapping
-    uint rtype;    // Region type. Anonymous or file backed
-    uint offset;
+    int len;      // Length of mapping
+    int prot;
+    int flags;
+    int rtype;    // TODO; Region type. Anonymous or file backed
+    int offset;
     int fd;
     struct _mmap_node_ *prev;
     struct _mmap_node_ *next;
@@ -48,24 +50,74 @@ typedef struct _mmap_node_ {
 static mmap_node *PopList(mmap_node **list);
 static void PushList(mmap_node **list, mmap_node *new_node);
 static void RemoveFromList(mmap_node **list, mmap_node *node);
+static void DestroyList(mmap_node **list);
 
 int sys_mmap(void) {
   /* Get the arguments */
+  void *addr_hint;
+  int len;
+  int prot;
+  int flags;
+  int fd;
+  int offset;
+  if (argint(0, (int *) &addr_hint) < 0  ||
+      argint(1, (int *) &len) < 0   ||
+      argint(2, (int *) &prot) < 0  ||
+      argint(3, (int *) &flags) < 0 ||
+      argint(4, (int *) &fd) < 0    ||
+      argint(5, (int *) &offset) < 0) {
+       // TODO: need to deallocate everything since there is an error?
+    return -1;
+  }
+  
+  if (len <= 0) {
+    // TODO: need to deallocate everything since there is an error?
+    return -1;
+  }
 
   struct proc *p = myproc();
-  mmap_node **list = (mmap_node **) &p->mmaps;
-  mmap_node *new_node = (mmap_node *) kmalloc(sizeof(mmap_node));
-  PushList(list, new_node);
+  /* Get address */
+  void *actual_addr;
+  if (addr_hint >= (void *) KERNBASE || addr_hint < (void *) p->sz) {
+    actual_addr = (void *) MMAPBASE;
+  } else {
+    actual_addr = (void *) PGROUNDUP((int) addr_hint);
+  }
 
+  while((actual_addr + len) < (void *) KERNBASE &&
+        allocuvm(p->pgdir, (uint) actual_addr, (uint) actual_addr + len) == 0) {
+    actual_addr += PGSIZE;
+  }
+  
+  if (actual_addr < (void *) KERNBASE) {
+    mmap_node **list = (mmap_node **) &p->mmaps;
+    mmap_node *new_node = (mmap_node *) kmalloc(sizeof(mmap_node));
+    if (new_node != NULL) {
+      new_node->addr = actual_addr;
+      new_node->hint_addr = addr_hint;
+      new_node->len = len;
+      new_node->fd = -1;  //TODO: need to dup
+      new_node->flags = flags; // TODO:
+      new_node->prot = prot;  // TODO:
+      new_node->rtype = -1;  //TODO: update this once we actually implement flags
+      PushList(list, new_node);
+      return (int) actual_addr;
+    }
+  }
 
-  return 0;
+  // TODO: need to deallocate everything since there is an error?
+  return -1;
 }
 
 int sys_munmap(void) {
   /* Get the arguments */
-  char *addr, *len;
-  argint(0, (int *) &addr);
-  argint(1, (int *) &len);
+  void *addr;
+  uint len;
+  if (argint(0, (int *) &addr) < 0 || 
+      argint(1, (int *) &len) < 0) {
+        // TODO: need to deallocate everything since there is an error?
+        return -1;
+  }
 
   /* Find the mapping in the list */
   struct proc *p = myproc();
@@ -86,7 +138,7 @@ int sys_munmap(void) {
 
   /* Remvoe the mapping (deallocuvm) */
   if (curr_node != NULL) {
-    deallocuvm(p->pgdir, (uint) addr+PGSIZE, (uint) addr); //double check
+    deallocuvm(p->pgdir, (uint) addr + len, (uint) addr); //double check
     /* Remove the node */
     RemoveFromList(list, curr_node);
     kmfree(curr_node);
@@ -105,11 +157,9 @@ void mmap_proc_deinit(void) {
      No need to deallocate the memory aloocated in mmap because
      That is deallocated in freevm()
   */
- struct proc *p = myproc();
- mmap_node **list = (mmap_node **) &p->mmaps;
-  while(p->mmaps != NULL) {
-    PopList(list);
-  }
+  struct proc *p = myproc();
+  mmap_node **list = (mmap_node **) &p->mmaps;
+  DestroyList(list);
 }
 
 static mmap_node *PopList(mmap_node **list) {
@@ -163,5 +213,11 @@ static void RemoveFromList(mmap_node **list, mmap_node *node) {
     /* Patch it up */
     node->prev->next = node->next;
     node->next->prev = node->prev;
+  }
+}
+
+static void DestroyList(mmap_node **list) {
+  while (*list != NULL) {
+    kmfree(PopList(list));
   }
 }

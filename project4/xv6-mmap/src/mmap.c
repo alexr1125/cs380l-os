@@ -84,9 +84,12 @@ int sys_mmap(void) {
     actual_addr = (void *) PGROUNDUP((int) addr_hint);
   }
 
+  //round up to the nearest page size
+  len = ((len/PGSIZE) + 1) * PGSIZE;
+
   while((actual_addr + len) < (void *) KERNBASE &&
         allocuvm(p->pgdir, (uint) actual_addr, (uint) actual_addr + len) == 0) {
-    actual_addr += PGSIZE;
+    actual_addr += len;
   }
   
   if (actual_addr < (void *) KERNBASE) {
@@ -138,13 +141,14 @@ int sys_munmap(void) {
 
   /* Remvoe the mapping (deallocuvm) */
   if (curr_node != NULL) {
-    deallocuvm(p->pgdir, (uint) addr + len, (uint) addr); //double check
+    deallocuvm(p->pgdir, (uint) curr_node->addr + curr_node->len, (uint) curr_node->addr); //double check
     /* Remove the node */
     RemoveFromList(list, curr_node);
     kmfree(curr_node);
+    return 0;
   }
 
-  return 0;
+  return -1;
 }
 
 void mmap_proc_init(struct proc *p) {

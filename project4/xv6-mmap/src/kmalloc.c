@@ -91,3 +91,17 @@ kmalloc(uint nbytes)
         return 0;
   }
 }
+
+/* For testing purposes */
+int sys_kmalloc(void) {
+  int nbytes = 0;
+  argint(0, &nbytes);
+  return (int) kmalloc((uint) nbytes);
+}
+
+int sys_kmfree(void) {
+  int addr = 0;
+  argint(0, &addr);
+  kmfree((void *) addr);
+  return 0;
+}

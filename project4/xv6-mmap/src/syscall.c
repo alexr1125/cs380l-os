@@ -103,11 +103,11 @@ extern int sys_unlink(void);
 extern int sys_wait(void);
 extern int sys_write(void);
 extern int sys_uptime(void);
+extern int sys_mmap(void);
+extern int sys_munmap(void);
 /* For testing purposes */
-int sys_kmalloc(void);
-int sys_kmfree(void);
-int sys_mmap(void);
-int sys_munmap(void);
+extern int sys_kmalloc(void);
+extern int sys_kmfree(void);
 
 static int (*syscalls[])(void) = {
 [SYS_fork]    sys_fork,
@@ -151,25 +151,4 @@ syscall(void)
             curproc->pid, curproc->name, num);
     curproc->tf->eax = -1;
   }
-}
-
-int sys_kmalloc(void) {
-  int nbytes = 0;
-  argint(0, &nbytes);
-  return (int) kmalloc((uint) nbytes);
-}
-
-int sys_kmfree(void) {
-  int addr = 0;
-  argint(0, &addr);
-  kmfree((void *) addr);
-  return 0;
-}
-
-int sys_mmap(void) {
-  return 0;
-}
-
-int sys_munmap(void) {
-  return 0;
 }

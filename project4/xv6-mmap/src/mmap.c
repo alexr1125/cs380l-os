@@ -86,6 +86,7 @@ int sys_mmap(void) {
   //round up to the nearest page size
   len = ((len/PGSIZE) + 1) * PGSIZE;
 
+  /* Find the block of virtual memory that has not been mapped and is large enough to fit requested size */
   void *start_addr = actual_addr;
   void *end_addr = actual_addr + len;
   while(end_addr < (void *) KERNBASE) {

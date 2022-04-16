@@ -51,7 +51,7 @@ static mmap_node *PopList(mmap_node **list);
 static void PushList(mmap_node **list, mmap_node *new_node);
 static void RemoveFromList(mmap_node **list, mmap_node *node);
 static void DestroyList(mmap_node **list);
-
+extern pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
 int sys_mmap(void) {
   /* Get the arguments */
   void *addr_hint;
@@ -83,30 +83,56 @@ int sys_mmap(void) {
   } else {
     actual_addr = (void *) PGROUNDUP((int) addr_hint);
   }
-
   //round up to the nearest page size
   len = ((len/PGSIZE) + 1) * PGSIZE;
 
-  while((actual_addr + len) < (void *) KERNBASE &&
-        allocuvm(p->pgdir, (uint) actual_addr, (uint) actual_addr + len) == 0) {
-    actual_addr += len;
-  }
-  
-  if (actual_addr < (void *) KERNBASE) {
-    mmap_node **list = (mmap_node **) &p->mmaps;
-    mmap_node *new_node = (mmap_node *) kmalloc(sizeof(mmap_node));
-    if (new_node != NULL) {
-      new_node->addr = actual_addr;
-      new_node->hint_addr = addr_hint;
-      new_node->len = len;
-      new_node->fd = -1;  //TODO: need to dup
-      new_node->flags = flags; // TODO:
-      new_node->prot = prot;  // TODO:
-      new_node->rtype = -1;  //TODO: update this once we actually implement flags
-      PushList(list, new_node);
-      return (int) actual_addr;
+  void *start_addr = actual_addr;
+  void *end_addr = actual_addr + len;
+  while(end_addr < (void *) KERNBASE) {
+    pte_t *pte = walkpgdir(p->pgdir, start_addr, 0);
+    if (pte == 0 || ((*pte&PTE_P) == 0)) {
+      start_addr += PGSIZE;
+    } else {
+      start_addr += PGSIZE;
+      actual_addr = start_addr;
+      end_addr = start_addr + len;
+    }
+
+    if (start_addr == end_addr) {
+      break;
     }
   }
+
+  if (start_addr != end_addr) {
+    panic("mmap out of memory");
+    // TODO: Error handling
+    return -1;
+  }
+
+  if (allocuvm(p->pgdir, (uint) actual_addr, (uint) actual_addr + len) == 0) {
+    // TODO: Error handling
+    return -1;
+  }
+
+  // while((actual_addr + len) < (void *) KERNBASE &&
+  //       allocuvm(p->pgdir, (uint) actual_addr, (uint) actual_addr + len) == 0) {
+  //   actual_addr += len;
+  // }
+  
+  mmap_node **list = (mmap_node **) &p->mmaps;
+  mmap_node *new_node = (mmap_node *) kmalloc(sizeof(mmap_node));
+  if (new_node != NULL) {
+    new_node->addr = actual_addr;
+    new_node->hint_addr = addr_hint;
+    new_node->len = len;
+    new_node->fd = -1;  //TODO: need to dup
+    new_node->flags = flags; // TODO:
+    new_node->prot = prot;  // TODO:
+    new_node->rtype = -1;  //TODO: update this once we actually implement flags
+    PushList(list, new_node);
+    return (int) actual_addr;
+  }
+ 
 
   // TODO: need to deallocate everything since there is an error?
   return -1;
@@ -141,6 +167,7 @@ int sys_munmap(void) {
 
   /* Remvoe the mapping (deallocuvm) */
   if (curr_node != NULL) {
+    memset(curr_node->addr, 0, curr_node->len); //Zero out the memory
     deallocuvm(p->pgdir, (uint) curr_node->addr + curr_node->len, (uint) curr_node->addr); //double check
     /* Remove the node */
     RemoveFromList(list, curr_node);

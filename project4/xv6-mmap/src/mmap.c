@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include <stdbool.h>
 
 /*
 |-------------------
@@ -52,6 +53,21 @@ static void PushList(mmap_node **list, mmap_node *new_node);
 static void RemoveFromList(mmap_node **list, mmap_node *node);
 static void DestroyList(mmap_node **list);
 extern pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
+
+static bool is_already_mapped(pde_t *pgdir, void *start_addr, int len) {
+  void *temp_addr = start_addr;
+  while (temp_addr < start_addr + len) {
+    pte_t *pte = walkpgdir(pgdir, temp_addr, 0);
+    if (pte != 0 && ((*pte&PTE_P) != 0)) {
+      /* Already mapped, so try to map to MMAPBASE (basically ignore the hint) */
+      return true;
+    }
+    temp_addr += PGSIZE;
+  }
+
+  return false;
+}
+
 int sys_mmap(void) {
   /* Get the arguments */
   void *addr_hint;
@@ -75,36 +91,42 @@ int sys_mmap(void) {
     return -1;
   }
 
-  /* Get address */
-  struct proc *p = myproc();
-  void *actual_addr;
-  if (addr_hint >= (void *) KERNBASE || addr_hint < (void *) p->sz) {
-    actual_addr = (void *) MMAPBASE;
-  } else {
-    actual_addr = (void *) PGROUNDUP((int) addr_hint);
-  }
   //round up to the nearest page size
   len = ((len/PGSIZE) + 1) * PGSIZE;
 
-  /* Find the block of virtual memory that has not been mapped and is large enough to fit requested size */
-  void *start_addr = actual_addr;
-  void *end_addr = actual_addr + len;
-  while(end_addr < (void *) KERNBASE) {
-    pte_t *pte = walkpgdir(p->pgdir, start_addr, 0);
-    if (pte == 0 || ((*pte&PTE_P) == 0)) {
-      start_addr += PGSIZE;
+  /* Get address */
+  struct proc *p = myproc();
+  void *actual_addr;
+  if (addr_hint >= (void *) KERNBASE || addr_hint == NULL) {
+    actual_addr = (void *) MMAPBASE;
+  } else if (addr_hint < (void *) MMAPBASE) {
+    /* Try to use the hint as an offset */
+    void *temp_addr = (void *) PGROUNDUP((int) (MMAPBASE + addr_hint));
+    if (((temp_addr + len) <= (void *)KERNBASE) &&
+        !is_already_mapped(p->pgdir, temp_addr, len)) {
+      actual_addr = temp_addr;
     } else {
-      start_addr += PGSIZE;
-      actual_addr = start_addr;
-      end_addr = start_addr + len;
+      actual_addr = (void *) MMAPBASE;
     }
-
-    if (start_addr == end_addr) {
-      break;
+  } else {
+    /* Try to use the address hint as the actual address. */
+    void *temp_addr = (void *) PGROUNDUP((int) addr_hint);
+    /* Check if available, else set the starting address to mmap base */
+    if (!is_already_mapped(p->pgdir, temp_addr, len)) {
+      actual_addr = temp_addr;
+    } else {
+      actual_addr = (void *) MMAPBASE;
     }
   }
 
-  if (start_addr != end_addr) {
+  /* Find the block of virtual memory that has not been mapped and is large enough to fit requested size */
+  void *start_addr = actual_addr;
+  while ((start_addr + len) <= (void *) KERNBASE && is_already_mapped(p->pgdir, start_addr, len)) {
+    actual_addr += len;
+    start_addr = actual_addr;
+  }
+
+  if (start_addr + len > (void *) KERNBASE) {
     panic("mmap out of memory");
     // TODO: Error handling
     return -1;

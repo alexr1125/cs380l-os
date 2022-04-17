@@ -75,8 +75,8 @@ int sys_mmap(void) {
     return -1;
   }
 
-  struct proc *p = myproc();
   /* Get address */
+  struct proc *p = myproc();
   void *actual_addr;
   if (addr_hint >= (void *) KERNBASE || addr_hint < (void *) p->sz) {
     actual_addr = (void *) MMAPBASE;
@@ -114,29 +114,23 @@ int sys_mmap(void) {
     // TODO: Error handling
     return -1;
   }
-
-  // while((actual_addr + len) < (void *) KERNBASE &&
-  //       allocuvm(p->pgdir, (uint) actual_addr, (uint) actual_addr + len) == 0) {
-  //   actual_addr += len;
-  // }
   
   mmap_node **list = (mmap_node **) &p->mmaps;
   mmap_node *new_node = (mmap_node *) kmalloc(sizeof(mmap_node));
-  if (new_node != NULL) {
-    new_node->addr = actual_addr;
-    new_node->hint_addr = addr_hint;
-    new_node->len = len;
-    new_node->fd = -1;  //TODO: need to dup
-    new_node->flags = flags; // TODO:
-    new_node->prot = prot;  // TODO:
-    new_node->rtype = -1;  //TODO: update this once we actually implement flags
-    PushList(list, new_node);
-    return (int) actual_addr;
+  if (new_node == NULL) {
+    // TODO: need to deallocate everything since there is an error?
+    return -1;
   }
  
-
-  // TODO: need to deallocate everything since there is an error?
-  return -1;
+  new_node->addr = actual_addr;
+  new_node->hint_addr = addr_hint;
+  new_node->len = len;
+  new_node->fd = -1;  //TODO: need to dup
+  new_node->flags = flags; // TODO:
+  new_node->prot = prot;  // TODO:
+  new_node->rtype = -1;  //TODO: update this once we actually implement flags
+  PushList(list, new_node);
+  return (int) actual_addr;
 }
 
 int sys_munmap(void) {

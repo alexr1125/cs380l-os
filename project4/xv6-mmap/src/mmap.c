@@ -172,7 +172,12 @@ int sys_munmap(void) {
   mmap_node *curr_node = head;
   while(curr_node != NULL) {
     if (curr_node->addr == addr) {  // still need to check length. not really necessary since we can assume it's always the same as when mmap was called
-      break;
+      memset(curr_node->addr, 0, curr_node->len); //Zero out the memory
+      deallocuvm(p->pgdir, (uint) curr_node->addr + curr_node->len, (uint) curr_node->addr); //double check
+      /* Remove the node */
+      RemoveFromList(list, curr_node);
+      kmfree(curr_node);
+      return 0;
     }
 
     if (curr_node->next == head) {
@@ -180,16 +185,6 @@ int sys_munmap(void) {
     } else {
       curr_node = curr_node->next;
     }
-  }
-
-  /* Remvoe the mapping (deallocuvm) */
-  if (curr_node != NULL) {
-    memset(curr_node->addr, 0, curr_node->len); //Zero out the memory
-    deallocuvm(p->pgdir, (uint) curr_node->addr + curr_node->len, (uint) curr_node->addr); //double check
-    /* Remove the node */
-    RemoveFromList(list, curr_node);
-    kmfree(curr_node);
-    return 0;
   }
 
   return -1;

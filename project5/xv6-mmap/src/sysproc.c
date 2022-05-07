@@ -129,3 +129,7 @@ sys_munmap(void)
   }
   return munmap((void*)addr, (uint)len);
 }
+
+int sys_msync(void) {
+  return 0;
+}

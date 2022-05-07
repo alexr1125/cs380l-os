@@ -107,7 +107,7 @@ sys_mmap(void)
   if (argint(3, &flags) < 0) {
     return 0;
   }
-  if ((void*)addr != (void*)0 && argint(4, &fd) < 0) {
+  if (argint(4, &fd) < 0) {
     return 0;
   }
   if (argint(5, &offset) < 0) {

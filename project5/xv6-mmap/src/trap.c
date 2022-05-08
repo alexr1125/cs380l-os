@@ -126,6 +126,12 @@ void pagefault_handler(struct trapframe *tf) {
           curproc->pid, curproc->name, tf->trapno, \
           tf->err, cpuid(), tf->eip, fault_addr);
 
+  if (tf->err != 4) {
+    /* Protection violation error. */
+    curproc->killed = 1;
+    return;
+  }
+
   /* Validate that the faulting address has been allocated by this process */
   struct mmap_region *curr_region = curproc->mmap_regions;
   while (curr_region != (struct mmap_region *) 0) {

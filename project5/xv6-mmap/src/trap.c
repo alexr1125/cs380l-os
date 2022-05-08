@@ -126,8 +126,18 @@ void pagefault_handler(struct trapframe *tf) {
           curproc->pid, curproc->name, tf->trapno, \
           tf->err, cpuid(), tf->eip, fault_addr);
 
-  if (tf->err != 4) {
+  /*
+    31              15                             4               0
+    +---+--  --+---+-----+---+--  --+---+----+----+---+---+---+---+---+
+    |   Reserved   | SGX |   Reserved   | SS | PK | I | R | U | W | P |
+    +---+--  --+---+-----+---+--  --+---+----+----+---+---+---+---+---+
+    P	1 bit	: Present	When set, the page fault was caused by a page-protection violation. When not set, it was caused by a non-present page.
+    W	1 bit	: Write	When set, the page fault was caused by a write access. When not set, it was caused by a read access.
+    U	1 bit	: User	When set, the page fault was caused while CPL = 3. This does not necessarily mean that the page fault was a privilege violation.    
+  */
+  if ((tf->err & 0x1) != 0) {
     /* Protection violation error. */
+    // cprintf("XV6_TEST_OUTPUT : try to write to nonwritable page\n");
     curproc->killed = 1;
     return;
   }
@@ -135,7 +145,9 @@ void pagefault_handler(struct trapframe *tf) {
   /* Validate that the faulting address has been allocated by this process */
   struct mmap_region *curr_region = curproc->mmap_regions;
   while (curr_region != (struct mmap_region *) 0) {
-    if (curr_region->start_addr == (uint) fault_page) {
+    /* Check the range of the region */
+    if (((uint) fault_addr >= curr_region->start_addr) &&
+         (uint) fault_addr < (curr_region->start_addr + curr_region->length)) {
       // cprintf("XV6_TEST_OUTPUT : found mmap region\n");
       break;
     }

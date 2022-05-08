@@ -635,6 +635,11 @@ munmap(void *addr, uint length)
       } else {
         curproc->mmap_regions = mmap->next_mmap_region;
       }
+      
+      /* Close the fd */
+      if (mmap->flags == MAP_FILE) {
+        fileclose((struct file *) mmap->fd);
+      }
       kmfree(mmap);
       return 0;
     }

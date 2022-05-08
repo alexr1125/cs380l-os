@@ -6,6 +6,7 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "mman.h"
 
 struct {
   struct spinlock lock;
@@ -569,17 +570,20 @@ mmap(void* addr, uint length, int prot, int flags, int fd, int offset)
       (uint)addr + PGROUNDUP(length) >= KERNBASE) {
     return (void*)0;
   }
-  if (allocuvm_mmap(curproc->pgdir, (uint)addr, (uint)addr + length) == 0) {
-    return (void*)0;
-  }
+
+  /* Comment this out to implement lazy page allocation */
+  // if (allocuvm_mmap(curproc->pgdir, (uint)addr, (uint)addr + length) == 0) {
+  //   return (void*)0;
+  // }
   if ((mmap = kmalloc(sizeof(struct mmap_region))) ==
       (struct mmap_region*)0) {
-    deallocuvm(curproc->pgdir, (uint)addr + length, (uint)addr);
+    /* No longer need to dealloc in case of an error since we are no longer allocating the physical memory here */
+    // deallocuvm(curproc->pgdir, (uint)addr + length, (uint)addr);
     return (void*)0;
   }
   mmap->start_addr = (uint)addr;
   mmap->length = length;
-  mmap->prot = prot;
+  mmap->prot = (prot == PROT_WRITE) ? PTE_W : 0;
   mmap->flags = flags;
   mmap->fd = fd;
   mmap->offset = offset;

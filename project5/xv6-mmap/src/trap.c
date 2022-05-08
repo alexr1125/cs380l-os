@@ -8,6 +8,8 @@
 #include "traps.h"
 #include "spinlock.h"
 
+void pagefault_handler(struct trapframe *tf);
+
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
 extern uint vectors[];  // in vectors.S: array of 256 entry pointers
@@ -77,7 +79,9 @@ trap(struct trapframe *tf)
             cpuid(), tf->cs, tf->eip);
     lapiceoi();
     break;
-
+  case T_PGFLT:
+    pagefault_handler(tf);
+    break;
   //PAGEBREAK: 13
   default:
     if(myproc() == 0 || (tf->cs&3) == 0){
@@ -109,4 +113,50 @@ trap(struct trapframe *tf)
   // Check if the process has been killed since we yielded
   if(myproc() && myproc()->killed && (tf->cs&3) == DPL_USER)
     exit();
+}
+
+void pagefault_handler(struct trapframe *tf) {
+  struct proc *curproc = myproc();
+  void *fault_addr = (void *) rcr2();
+  void *fault_page = (void *) PGROUNDDOWN((uint)fault_addr);
+
+  cprintf("============in pagefault_handler============\n" \
+          "pid %d %s: trap %d err %d on cpu %d " \
+          "eip 0x%x addr 0x%x\n", \
+          curproc->pid, curproc->name, tf->trapno, \
+          tf->err, cpuid(), tf->eip, fault_addr);
+
+  /* Validate that the faulting address has been allocated by this process */
+  struct mmap_region *curr_region = curproc->mmap_regions;
+  while (curr_region != (struct mmap_region *) 0) {
+    if (curr_region->start_addr == (uint) fault_page) {
+      // cprintf("XV6_TEST_OUTPUT : found mmap region\n");
+      break;
+    }
+
+    curr_region = curr_region->next_mmap_region;
+  }
+
+  /* Not a valid region so we kill the process */
+  if (curr_region == (struct mmap_region *) 0) {
+    curproc->killed = 1;
+    // cprintf("XV6_TEST_OUTPUT : not valid mmap region\n");
+    return;
+  }
+
+  /* Valid region so try to create a mapping in physical memory */
+  char *mem = kalloc();
+  if (mem == 0) {
+    /* No more memory available */
+    curproc->killed = 1;
+    // cprintf("XV6_TEST_OUTPUT : no more memory\n");
+    return;    
+  }
+  memset(mem, 0, PGSIZE);
+  if (mappages(curproc->pgdir, fault_page, PGSIZE, (uint) V2P(mem), curproc->mmap_regions->prot | PTE_U) < 0) {
+    kfree(mem);
+    curproc->killed = 1;
+    // cprintf("XV6_TEST_OUTPUT : unable to map regions\n");
+    return;
+  }
 }

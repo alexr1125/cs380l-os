@@ -6,7 +6,10 @@
 #include "x86.h"
 #include "proc.h"
 #include "spinlock.h"
+#include "sleeplock.h"
+#include "fs.h"
 #include "mman.h"
+#include "file.h"
 
 struct {
   struct spinlock lock;
@@ -581,11 +584,33 @@ mmap(void* addr, uint length, int prot, int flags, int fd, int offset)
     // deallocuvm(curproc->pgdir, (uint)addr + length, (uint)addr);
     return (void*)0;
   }
+
+  /* Error check the fd */
+  if (flags == MAP_FILE) {
+    if((fd < 0 || fd >= NOFILE) ||
+       (curproc->ofile[fd] == 0))
+    {
+      kfree((char *) mmap);
+      return (void *) -1;
+    }
+
+    struct file *file = curproc->ofile[fd];
+    if (file->readable == 0 || file->writable == 0)
+    {
+      kfree( (char *) mmap);
+      return (void *) -1;
+    }
+    
+    mmap->fd = (int) filedup(file);
+    fileseek((struct file *) mmap->fd, offset);
+  }  else {
+    mmap->fd = -1;
+  }
+
   mmap->start_addr = (uint)addr;
   mmap->length = length;
   mmap->prot = (prot == PROT_WRITE) ? PTE_W : 0;
   mmap->flags = flags;
-  mmap->fd = fd;
   mmap->offset = offset;
   mmap->next_mmap_region = curproc->mmap_regions;
   curproc->mmap_regions = mmap;

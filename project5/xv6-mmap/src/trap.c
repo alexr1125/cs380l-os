@@ -7,8 +7,10 @@
 #include "x86.h"
 #include "traps.h"
 #include "spinlock.h"
+#include "mman.h"
 
 void pagefault_handler(struct trapframe *tf);
+extern pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
 
 // Interrupt descriptor table (shared by all CPUs).
 struct gatedesc idt[256];
@@ -176,5 +178,18 @@ void pagefault_handler(struct trapframe *tf) {
     curproc->killed = 1;
     // cprintf("XV6_TEST_OUTPUT : unable to map regions\n");
     return;
+  }
+
+  /* If map file, then copy the file into the page */
+  if (curr_region->flags == MAP_FILE) {
+    fileread((struct file *) curr_region->fd, fault_page, PGSIZE);
+
+    pde_t *pte = (pde_t *) 0;
+    if((pte = walkpgdir(curproc->pgdir, (void *)fault_page, 0)) == (pde_t *) 0) {
+      cprintf("XV6_TEST_OUTPUT : Failed to find allocated memory\n");
+      curproc->killed = 1;
+      return;
+    }
+    *pte &= ~(1U << PTE_D); // unset dirty bit    
   }
 }

@@ -6,6 +6,7 @@
 #include "memlayout.h"
 #include "mmu.h"
 #include "proc.h"
+#include "mman.h"
 
 int
 sys_fork(void)
@@ -113,6 +114,19 @@ sys_mmap(void)
   if (argint(5, &offset) < 0) {
     return 0;
   }
+
+  if (flags == MAP_ANONYMOUS) {
+    if (fd != -1) {
+      return -1;
+    }
+  } else if (flags == MAP_FILE) {
+    if (fd == -1) {
+      return -1;
+    }
+  } else {
+    return -1;
+  }
+
   return (int)mmap((void*)addr, (uint)len, prot, flags, fd, offset);
 }
 

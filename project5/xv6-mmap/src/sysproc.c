@@ -145,5 +145,14 @@ sys_munmap(void)
 }
 
 int sys_msync(void) {
-  return 0;
+  int addr, len;
+
+  if (argint(0, &addr) < 0) {
+    return -1;
+  }
+  if (argint(1, &len) < 0) {
+    return -1;
+  }
+
+  return msync((void *) addr, len);
 }

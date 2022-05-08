@@ -126,6 +126,7 @@ void            wakeup(void*);
 void            yield(void);
 void*           mmap(void*, uint, int, int, int, int);
 int             munmap(void*, uint);
+int             msync(void *, int);
 
 // swtch.S
 void            swtch(struct context**, struct context*);

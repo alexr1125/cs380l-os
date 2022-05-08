@@ -11,6 +11,8 @@
 #include "mman.h"
 #include "file.h"
 
+extern pte_t *walkpgdir(pde_t *pgdir, const void *va, int alloc);
+
 struct {
   struct spinlock lock;
   struct proc proc[NPROC];
@@ -696,4 +698,48 @@ procdump(void)
     }
     cprintf("\n");
   }
+}
+
+int msync(void* start_addr, int length) {
+  struct proc *curproc = myproc();
+  /* find the corresponding region in the mmap linked list */
+  struct mmap_region *curr_region = curproc->mmap_regions;
+  while (curr_region != (struct mmap_region *) 0) {
+    /* Check the range of the region */
+    if ((uint) start_addr == curr_region->start_addr) {
+      // cprintf("XV6_TEST_OUTPUT : found mmap region\n");
+      break;
+    }
+
+    curr_region = curr_region->next_mmap_region;
+  }
+
+  if (curr_region == (struct mmap_region *) 0) {
+    return -1;
+  }
+
+  if (curr_region->length != length) {
+    return -1;
+  }
+  /*
+    Go through the entire region page by page.
+    For each page check if it has been allocated (walkpgdir).
+    If it has, check the dirty bit. If set, then write to file.
+    Else do nothing.
+  */
+  void *curr_address = start_addr;
+  struct file *file = (struct file *)curr_region->fd;
+  int curr_offset = curr_region->offset;
+  pte_t *pte;
+  while ((int) curr_address < (int) start_addr + length) {
+    fileseek(file, curr_offset);
+    pte = walkpgdir(curproc->pgdir, curr_address, 0);
+    if ((pte != (pte_t *) 0) && ((*pte & (1 << PTE_D)) != 0)) {
+      filewrite(file, curr_address, PGSIZE);
+    }
+    curr_offset += PGSIZE;
+    curr_address += PGSIZE;
+  }
+
+  return 0;
 }
